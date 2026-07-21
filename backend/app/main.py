@@ -1,8 +1,10 @@
 from fastapi import FastAPI
+from app.config.settings import settings
+
 
 app = FastAPI(
-    title="Multiagent AI Learning Platform",
-    version="1.0.0",
+    title=settings.app_name,
+    version=settings.app_version,
 )
 
 
