@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 import structlog
 
@@ -14,7 +15,7 @@ def configure_logging() -> None:
         format="%(message)s",
     )
 
-    processors = [
+    processors: list[Any] = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.stdlib.add_log_level,
