@@ -9,14 +9,51 @@ dependencies = [
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.2",
     "python-dotenv>=1.2.2",
+    "structlog>=26.1.0",
     "uvicorn>=0.51.0",
 ]
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
+    "httpx2>=2.7.0",
     "mypy>=2.3.0",
     "pre-commit>=4.6.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "ruff>=0.15.22",
 ]
+
+
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+    "UP",
+    "B",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+plugins = [
+  "pydantic.mypy"
+]
+python_version = "3.12"
+strict = false
+warn_unused_configs = true
+warn_return_any = true
+warn_unused_ignores = true
+
+
+[tool.pytest.ini_options]
+pythonpath = "."
+testpaths = ["tests"]
