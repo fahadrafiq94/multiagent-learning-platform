@@ -29,6 +29,5 @@ app = FastAPI(
 
 @app.get("/health")
 def health():
-    logger.debug("health_endpoint_entered")
     logger.info("Health_check_endpoint_called")
     return {"status": "ok"}
