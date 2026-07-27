@@ -113,7 +113,6 @@ LangSmith • DeepEval • RAGAS
 
 ## Planned AI Stack
 
-* LangChain
 * LangGraph
 * Ollama
 * vLLM
@@ -185,11 +184,11 @@ The project follows a feature-branch workflow.
 
 ## Sprint 2
 
-* LangChain Integration
+* LangGraph Foundation
 
 ## Sprint 3
 
-* LangGraph Orchestration
+* Agent Framework
 
 ## Sprint 4
 
@@ -197,16 +196,15 @@ The project follows a feature-branch workflow.
 
 ## Sprint 5
 
-* Retrieval-Augmented Generation (RAG)
+* Knowledge Base & RAG
 
 ## Sprint 6
 
-* Multi-Agent Learning Environment
+* Evaluation & Observability
 
 ## Sprint 7
 
-* Evaluation and Research Experiments
-
+* Deployment & Production
 ---
 
 # License
