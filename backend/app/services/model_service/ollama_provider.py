@@ -423,13 +423,20 @@ class OllamaModelProvider:
 
     def _parse_stream_line(self, line: str) -> dict[str, Any]:
         try:
-            data = json.loads(line)
-            return cast(dict[str, Any], data)
-        except Exception as exc:
+            parsed = json.loads(line)
+        except json.JSONDecodeError as exc:
             raise ModelGenerationError(
                 self.provider_name,
                 details={"error": "Failed to parse Ollama stream chunk.", "line": line},
             ) from exc
+
+        if not isinstance(parsed, dict):
+            raise ModelGenerationError(
+                self.provider_name,
+                details={"error": "Ollama stream chunk was not a JSON object.", "line": line},
+            )
+
+        return cast(dict[str, Any], parsed)
 
     def _latency_ms(self, start: float) -> float:
         return round((time.perf_counter() - start) * 1000, 2)
