@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Protocol
 
+from app.services.model_service.base import ModelProvider
 from app.services.model_service.schemas import (
     ModelChatRequest,
     ModelChatResponse,
@@ -13,27 +13,31 @@ from app.services.model_service.schemas import (
 )
 
 
-class ModelProvider(Protocol):
-    """Provider interface implemented by Ollama, vLLM, or future providers."""
+class ModelService:
+    """Application-facing model service facade.
+
+    Agents and orchestration code should depend on this service instead of
+    provider-specific implementations.
+    """
+
+    def __init__(self, provider: ModelProvider) -> None:
+        self._provider = provider
 
     async def generate(self, request: ModelChatRequest) -> ModelChatResponse:
-        """Generate a full non-streaming response."""
-        ...
+        return await self._provider.generate(request)
 
-    def stream(
+    async def stream(
         self,
         request: ModelChatRequest,
     ) -> AsyncIterator[ModelStreamChunk]:
-        """Generate a streaming response."""
-        ...
+        async for chunk in self._provider.stream(request):
+            yield chunk
 
     async def embed(
         self,
         request: ModelEmbeddingRequest,
     ) -> ModelEmbeddingResponse:
-        """Generate embeddings."""
-        ...
+        return await self._provider.embed(request)
 
     async def health(self) -> ModelHealthResponse:
-        """Check provider health."""
-        ...
+        return await self._provider.health()
