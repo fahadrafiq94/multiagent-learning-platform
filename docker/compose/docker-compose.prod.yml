@@ -1,18 +1,66 @@
+version: '3.8'
+
 services:
   backend:
     build:
       context: ../..
       dockerfile: docker/backend/Dockerfile
-
-    container_name: multiagent-prod-backend
-
+    container_name: fredi-backend-prod
+    env_file:
+      - ../../backend/.env.production
+    environment:
+      APP_ENV: production
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_CHAT_MODEL: qwen3:4b
+      OLLAMA_EMBEDDING_MODEL: nomic-embed-text-v2-moe
+      MODEL_PROVIDER: ollama
     ports:
       - "8000:8000"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    networks:
+      - fredi-network
+    # In production, code should be baked into the image, NOT mounted from host
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
 
-    env_file:
-      - ../../backend/.env
-
+  ollama:
+    image: ollama/ollama:latest
+    container_name: fredi-ollama-prod
+    # Port 11434 removed from host binding so only backend can reach it internally
     volumes:
-      - ../../backend/app:/app/app
+      - ollama-data:/root/.ollama
+    networks:
+      - fredi-network
+    restart: always
+    # Enable NVIDIA GPU Acceleration for Production Server
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:11434/api/tags || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
 
-    restart: unless-stopped
+volumes:
+  ollama-data:
+
+networks:
+  fredi-network:
+    driver: bridge

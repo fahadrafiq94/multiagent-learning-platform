@@ -3,16 +3,41 @@ services:
     build:
       context: ../..
       dockerfile: docker/backend/Dockerfile
-
-    container_name: multiagent-dev-backend
-
-    ports:
-      - "8000:8000"
-
+    container_name: fredi-backend-dev
     env_file:
       - ../../backend/.env
-
+    environment:
+      APP_ENV: development
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_CHAT_MODEL: qwen3:4b
+      OLLAMA_EMBEDDING_MODEL: nomic-embed-text-v2-moe
+      MODEL_PROVIDER: ollama
+    ports:
+      - "8000:8000"
+    depends_on:
+      ollama:
+        condition: service_started
+    networks:
+      - fredi-network
     volumes:
       - ../../backend/app:/app/app
-
+      - ../../backend/tests:/app/tests
     restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: fredi-ollama-dev
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - fredi-network
+    restart: unless-stopped
+
+volumes:
+  ollama-data:
+
+networks:
+  fredi-network:
+    driver: bridge

@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     ollama_embedding_model: str = "nomic-embed-text-v2-moe"
 
     # Model request behavior
-    model_request_timeout_seconds: float = 60.0
+    model_request_timeout_seconds: float = 120.0
     model_max_retries: int = 2
     model_retry_backoff_seconds: float = 0.5
 

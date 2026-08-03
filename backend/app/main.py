@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.routes.model import router as model_router
 from app.config.settings import settings
 from app.logging.config import configure_logging
 from app.logging.logger import logger
@@ -31,3 +32,6 @@ app = FastAPI(
 def health():
     logger.info("Health_check_endpoint_called")
     return {"status": "ok"}
+
+
+app.include_router(model_router)
