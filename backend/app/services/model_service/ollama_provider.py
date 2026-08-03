@@ -4,7 +4,7 @@ import asyncio
 import json
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import httpx
 
@@ -34,7 +34,7 @@ class OllamaModelProvider:
     HTTP API shape.
     """
 
-    provider_name = "ollama"
+    provider_name: Literal["ollama"] = "ollama"
 
     def __init__(
         self,

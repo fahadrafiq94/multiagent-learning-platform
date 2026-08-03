@@ -44,9 +44,9 @@ Build a production-quality development environment and software engineering foun
 
 ---
 
-# Sprint 1 – Model Service
+# Sprint 1 – Model Service ✅
 
-**Status:** Planned
+**Status:** Completed
 
 ## Goal
 
@@ -69,7 +69,22 @@ Create a unified abstraction layer between the application and any language mode
 
 ## Completed
 
-*To be updated after Sprint 1.*
+* ✅ Designed a provider-independent Model Service architecture
+* ✅ Created a `ModelProvider` interface/protocol
+* ✅ Implemented the Ollama provider
+* ✅ Defined typed request and response models for chat, streaming, embeddings, usage, and health checks
+* ✅ Added non-streaming generation support through the Model Service
+* ✅ Added streaming response support using newline-delimited JSON responses
+* ✅ Added embedding support through the Model Service
+* ✅ Added structured logging for model calls
+* ✅ Added model service error types and provider-level error handling
+* ✅ Added timeout and retry handling for model provider requests
+* ✅ Added a model provider health check endpoint
+* ✅ Added FastAPI testing endpoints for the Model Service
+* ✅ Added unit tests for schemas, exceptions, service facade, factory, provider helpers, and API routes
+* ✅ Wired the backend and Ollama through Docker Compose for local development
+* ✅ Configured development model defaults for `qwen3:4b` and `nomic-embed-text-v2-moe`
+* ✅ Prepared the architecture for future vLLM integration without implementing vLLM yet
 
 ---
 
@@ -110,9 +125,10 @@ Develop reusable agents that perform specialized educational tasks.
 ## Planned
 
 * BaseAgent abstraction
-* Coach Agent
+* Orchestrator Agent
 * Scenario Agent
-* Reflection Agent
+* Process Coach Agent
+* AP+ Navigator Agent
 * Prompt management
 * Agent lifecycle
 * Structured outputs
@@ -137,10 +153,12 @@ Develop a context management system that provides each agent with relevant and e
 ## Planned
 
 * Context Builder
+* Active Context
+* Session Summary
+* Full Archive
+* Checklist State
 * Structured note-taking
 * Conversation compaction
-* Working memory
-* Long-term memory
 * Context retrieval
 * Prompt assembly
 * Token budgeting
@@ -158,20 +176,21 @@ Develop a context management system that provides each agent with relevant and e
 
 ## Goal
 
-Build the knowledge layer of the platform using Retrieval-Augmented Generation (RAG).
+Build the knowledge layer of the platform using structured AP+ step data and Retrieval-Augmented Generation (RAG).
 
 ## Planned
 
 * PostgreSQL integration
 * pgvector setup
+* Structured AP+ 40-step data model
 * Document ingestion
 * Chunking pipeline
 * Metadata handling
-* Embeddings
+* Embeddings through the Model Service
 * Retrieval pipeline
 * Hybrid search
 * Citation support
-* RAG evaluation with RAGAS
+* RAG evaluation with RAGAS or a lightweight local alternative
 
 ## Completed
 
@@ -189,14 +208,17 @@ Measure, monitor and evaluate the performance of the complete multi-agent system
 
 ## Planned
 
-* Agent evaluation
-* DeepEval integration
-* LangSmith tracing
+* Agent response quality evaluation
+* Routing correctness evaluation
+* Socratic behavior evaluation
+* AP+ grounding evaluation
+* Hallucination avoidance checks
+* Hint-level appropriateness evaluation
+* DeepEval integration if useful locally
 * Experiment tracking
-* Metrics dashboard
-* Logging improvements
 * Benchmark datasets
 * Evaluation reports
+* Logging improvements
 
 ## Completed
 
@@ -210,21 +232,21 @@ Measure, monitor and evaluate the performance of the complete multi-agent system
 
 ## Goal
 
-Prepare the platform for deployment on the university server.
+Prepare the platform for deployment on the local or university server.
 
 ## Planned
 
 * Multi-container Docker deployment
 * PostgreSQL container
-* Redis container
-* Model server deployment (Ollama)
+* Model server deployment with Ollama
 * Future vLLM support
-* Reverse proxy
 * Environment configuration
 * Backup strategy
 * Security improvements
 * Deployment documentation
 * Production testing
+* Optional reverse proxy if needed
+* Optional Redis if asynchronous workloads require it
 
 ## Completed
 
@@ -232,7 +254,7 @@ Prepare the platform for deployment on the university server.
 
 ---
 
-# Final Architecture (Target)
+# Final Architecture (Phase 1 Target)
 
 ```text
                     Frontend (Future)
@@ -243,14 +265,19 @@ Prepare the platform for deployment on the university server.
                            ▼
                   LangGraph Orchestrator
                            │
-       ┌───────────────────┼───────────────────┐
-       ▼                   ▼                   ▼
-  Coach Agent       Scenario Agent      Reflection Agent
-       │                   │                   │
-       └───────────────────┼───────────────────┘
+       ┌───────────────────┼────────────────────┐
+       ▼                   ▼                    ▼
+ Scenario Agent    Process Coach Agent    AP+ Navigator Agent
+       │                   │                    │
+       └───────────────────┼────────────────────┘
                            ▼
                     Context Engine
                            │
+        ┌──────────────────┼───────────────────┐
+        ▼                  ▼                   ▼
+ Active Context     Session Summary      Checklist State
+        │                  │                   │
+        └──────────────────┼───────────────────┘
                            ▼
                      Model Service
                            │
@@ -259,9 +286,9 @@ Prepare the platform for deployment on the university server.
               Ollama             Future vLLM
                            │
                            ▼
-                PostgreSQL • pgvector • Redis
+                PostgreSQL • pgvector
 
-          Evaluation: LangSmith • DeepEval • RAGAS
+          Evaluation: Local Logs • Benchmark Datasets • Custom Rubrics
 ```
 
 ---
@@ -271,7 +298,7 @@ Prepare the platform for deployment on the university server.
 | Version | Sprint   | Status      |
 | ------- | -------- | ----------- |
 | v0.1.0  | Sprint 0 | ✅ Completed |
-| v0.2.0  | Sprint 1 | ⏳ Planned   |
+| v0.2.0  | Sprint 1 | ✅ Completed |
 | v0.3.0  | Sprint 2 | ⏳ Planned   |
 | v0.4.0  | Sprint 3 | ⏳ Planned   |
 | v0.5.0  | Sprint 4 | ⏳ Planned   |
