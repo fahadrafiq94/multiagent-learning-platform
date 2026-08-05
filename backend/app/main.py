@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.routes.model import router as model_router
+from app.api.routes.orchestration import router as orchestration_router
 from app.config.settings import settings
 from app.logging.config import configure_logging
 from app.logging.logger import logger
@@ -35,3 +36,4 @@ def health():
 
 
 app.include_router(model_router)
+app.include_router(orchestration_router)
