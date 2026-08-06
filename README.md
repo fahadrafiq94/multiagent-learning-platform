@@ -25,7 +25,7 @@ The primary objectives of the project are:
 
 # Current Status
 
-**Version:** v0.1.0
+**Version:** v0.3.0
 
 Sprint 0 (Foundation) has been completed.
 
@@ -184,7 +184,28 @@ The project follows a feature-branch workflow.
 
 ## Sprint 2
 
-* LangGraph Foundation
+## Completed
+
+* ✅ Added LangGraph as the application orchestration engine
+* ✅ Defined a typed shared orchestration state
+* ✅ Implemented the initial state-based workflow
+* ✅ Added input preparation and response finalization nodes
+* ✅ Connected LangGraph nodes to the Sprint 1 Model Service
+* ✅ Added an application-facing Orchestration Service
+* ✅ Added orchestration request and response models
+* ✅ Added an orchestration service factory
+* ✅ Added `POST /orchestration/invoke`
+* ✅ Implemented deterministic conditional routing
+* ✅ Added a Scenario placeholder path
+* ✅ Added a Process Coach placeholder path
+* ✅ Added an AP+ Navigator placeholder path
+* ✅ Added a deterministic fallback path
+* ✅ Added explicit route reasons and routing metadata
+* ✅ Added controlled graph and model failure handling
+* ✅ Added router, graph-path, service, schema, factory, and API tests
+* ✅ Added local Mermaid graph visualization and export
+* ✅ Added readable node-specific Mermaid styling
+* ✅ Preserved the architectural boundary between orchestration and future agents
 
 ## Sprint 3
 
