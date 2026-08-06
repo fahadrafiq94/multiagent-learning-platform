@@ -16,10 +16,14 @@ from app.services.model_service.service import ModelService
 
 class FakeModelService(ModelService):
     def __init__(self) -> None:
-        # Override __init__ so no positional arguments are required
-        pass
+        self.last_request: ModelChatRequest | None = None
 
-    async def generate(self, request: ModelChatRequest) -> ModelChatResponse:
+    async def generate(
+        self,
+        request: ModelChatRequest,
+    ) -> ModelChatResponse:
+        self.last_request = request
+
         return ModelChatResponse(
             content=f"Model response to: {request.messages[-1].content}",
             model=request.model or "fake-model",
@@ -118,3 +122,82 @@ async def test_graph_handles_model_service_error() -> None:
     assert result["final_response"] == (
         "I could not process the message because: Model generation failed for provider: ollama"
     )
+
+
+@pytest.mark.asyncio
+async def test_graph_routes_to_scenario_path() -> None:
+    model_service = FakeModelService()
+    graph = build_orchestration_graph(model_service)
+
+    result = await graph.ainvoke(
+        {
+            "session_id": "session-1",
+            "student_id": "student-1",
+            "user_message": ("I want to define my company name and business problem."),
+            "metadata": {},
+        }
+    )
+
+    assert result["route"] == "scenario"
+    assert result["metadata"]["selected_path"] == "scenario"
+    assert result["metadata"]["routing_completed"] is True
+    assert model_service.last_request is not None
+    assert "Scenario placeholder path" in model_service.last_request.messages[0].content
+
+
+@pytest.mark.asyncio
+async def test_graph_routes_to_process_coach_path() -> None:
+    model_service = FakeModelService()
+    graph = build_orchestration_graph(model_service)
+
+    result = await graph.ainvoke(
+        {
+            "session_id": "session-1",
+            "student_id": "student-1",
+            "user_message": ("Why is procurement important in this business process?"),
+            "metadata": {},
+        }
+    )
+
+    assert result["route"] == "process_coach"
+    assert result["metadata"]["selected_path"] == "process_coach"
+    assert model_service.last_request is not None
+    assert "Process Coach placeholder path" in model_service.last_request.messages[0].content
+
+
+@pytest.mark.asyncio
+async def test_graph_routes_to_ap_plus_navigator_path() -> None:
+    model_service = FakeModelService()
+    graph = build_orchestration_graph(model_service)
+
+    result = await graph.ainvoke(
+        {
+            "session_id": "session-1",
+            "student_id": "student-1",
+            "user_message": ("Where can I find the purchase-order screen in AP+?"),
+            "metadata": {},
+        }
+    )
+
+    assert result["route"] == "ap_plus_navigator"
+    assert result["metadata"]["selected_path"] == "ap_plus_navigator"
+    assert model_service.last_request is not None
+    assert "AP+ Navigator placeholder path" in model_service.last_request.messages[0].content
+
+
+@pytest.mark.asyncio
+async def test_graph_routes_to_fallback_path() -> None:
+    model_service = FakeModelService()
+    graph = build_orchestration_graph(model_service)
+
+    result = await graph.ainvoke(
+        {
+            "session_id": "session-1",
+            "student_id": "student-1",
+            "user_message": "Hello there.",
+            "metadata": {},
+        }
+    )
+
+    assert result["route"] == "fallback"
+    assert result["metadata"]["selected_path"] == "fallback"

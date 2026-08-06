@@ -1,9 +1,97 @@
 from __future__ import annotations
 
-from app.orchestration.state import OrchestrationState
+from app.orchestration.router import classify_route
+from app.orchestration.state import OrchestrationState, RouteName
 from app.services.model_service.exceptions import ModelServiceError
 from app.services.model_service.schemas import ModelChatRequest, ModelMessage
 from app.services.model_service.service import ModelService
+
+ROUTE_SYSTEM_INSTRUCTIONS: dict[RouteName, str] = {
+    "scenario": (
+        "You are currently operating through the Scenario placeholder path. "
+        "Help clarify the company context and business problem. "
+        "Do not provide AP+ procedural instructions."
+    ),
+    "process_coach": (
+        "You are currently operating through the Process Coach placeholder path. "
+        "Support business-process reasoning using brief guiding questions. "
+        "Do not provide a step-by-step tutorial."
+    ),
+    "ap_plus_navigator": (
+        "You are currently operating through the AP+ Navigator placeholder path. "
+        "Provide concise AP+-specific clarification without revealing an entire "
+        "step-by-step process."
+    ),
+    "fallback": (
+        "You are currently operating through the fallback placeholder path. "
+        "Respond briefly, acknowledge the request, and ask for clarification "
+        "when the learning intent is unclear."
+    ),
+}
+
+
+def route_request_node(
+    state: OrchestrationState,
+) -> OrchestrationState:
+    """Select a placeholder orchestration path deterministically."""
+
+    if state.get("error"):
+        return state
+
+    decision = classify_route(state["user_message"])
+    metadata = dict(state.get("metadata", {}))
+
+    return {
+        **state,
+        "route": decision.route,
+        "route_reason": decision.reason,
+        "metadata": {
+            **metadata,
+            "routing_completed": True,
+            "routing_strategy": "deterministic_keywords_v1",
+        },
+    }
+
+
+def scenario_path_node(
+    state: OrchestrationState,
+) -> OrchestrationState:
+    return _mark_selected_path(state, "scenario")
+
+
+def process_coach_path_node(
+    state: OrchestrationState,
+) -> OrchestrationState:
+    return _mark_selected_path(state, "process_coach")
+
+
+def ap_plus_navigator_path_node(
+    state: OrchestrationState,
+) -> OrchestrationState:
+    return _mark_selected_path(state, "ap_plus_navigator")
+
+
+def fallback_path_node(
+    state: OrchestrationState,
+) -> OrchestrationState:
+    return _mark_selected_path(state, "fallback")
+
+
+def _mark_selected_path(
+    state: OrchestrationState,
+    route: RouteName,
+) -> OrchestrationState:
+    """Record which placeholder route node was executed."""
+
+    metadata = dict(state.get("metadata", {}))
+
+    return {
+        **state,
+        "metadata": {
+            **metadata,
+            "selected_path": route,
+        },
+    }
 
 
 def prepare_input_node(state: OrchestrationState) -> OrchestrationState:
@@ -50,24 +138,21 @@ async def model_response_node(
     state: OrchestrationState,
     model_service: ModelService,
 ) -> OrchestrationState:
-    """Generate a response using the Sprint 1 Model Service.
-
-    This is not an agent yet. It is only a minimal graph-to-model connection.
-    """
+    """Generate a response through the selected Sprint 2 route."""
 
     if state.get("error"):
         return state
 
     metadata = dict(state.get("metadata", {}))
+    route = state.get("route", "fallback")
 
     request = ModelChatRequest(
         messages=[
             ModelMessage(
                 role="system",
                 content=(
-                    "You are FREDi, a concise educational AI assistant. "
-                    "For now, respond briefly and clearly. "
-                    "Do not claim to be a full AP+ tutor yet."
+                    "You are FREDi, an educational AI learning environment. "
+                    f"{ROUTE_SYSTEM_INSTRUCTIONS[route]}"
                 ),
             ),
             ModelMessage(
