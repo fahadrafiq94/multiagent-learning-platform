@@ -6,10 +6,10 @@ from typing import Literal
 from app.orchestration.state import OrchestrationState, RouteName
 
 GraphRouteTarget = Literal[
-    "scenario_path",
-    "process_coach_path",
-    "ap_plus_navigator_path",
-    "fallback_path",
+    "scenario_agent",
+    "process_coach_agent",
+    "ap_plus_navigator_agent",
+    "fallback_response",
 ]
 
 
@@ -105,16 +105,24 @@ def classify_route(user_message: str) -> RouteDecision:
     )
 
 
-def route_to_graph_target(state: OrchestrationState) -> GraphRouteTarget:
-    """Map the selected application route to a LangGraph node name."""
+def route_to_graph_target(
+    state: OrchestrationState,
+) -> GraphRouteTarget:
+    """Map an orchestration route to the appropriate graph node."""
 
-    route = state.get("route", "fallback")
+    route = state.get(
+        "route",
+        "fallback",
+    )
 
-    route_targets: dict[RouteName, GraphRouteTarget] = {
-        "scenario": "scenario_path",
-        "process_coach": "process_coach_path",
-        "ap_plus_navigator": "ap_plus_navigator_path",
-        "fallback": "fallback_path",
+    route_targets: dict[
+        RouteName,
+        GraphRouteTarget,
+    ] = {
+        "scenario": "scenario_agent",
+        "process_coach": "process_coach_agent",
+        "ap_plus_navigator": "ap_plus_navigator_agent",
+        "fallback": "fallback_response",
     }
 
     return route_targets[route]

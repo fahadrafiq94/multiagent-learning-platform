@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Literal, TypedDict
 
+from app.agents.policies import GuidanceLevel
+
 RouteName = Literal[
     "scenario",
     "process_coach",
@@ -11,12 +13,7 @@ RouteName = Literal[
 
 
 class OrchestrationState(TypedDict, total=False):
-    """Shared state passed through the LangGraph workflow.
-
-    This is intentionally minimal in Sprint 2.
-    Later sprints will extend this with context, memory, checklist state,
-    retrieved knowledge, and agent-specific outputs.
-    """
+    """Shared state passed through the LangGraph workflow."""
 
     # Request identity
     session_id: str
@@ -29,7 +26,13 @@ class OrchestrationState(TypedDict, total=False):
     route: RouteName
     route_reason: str
 
-    # Model interaction
+    # Guidance Level
+    guidance_level: GuidanceLevel
+
+    # Agent execution
+    agent_response: str
+
+    # Retained temporarily for compatibility with earlier Sprint 2 code.
     model_response: str
 
     # Final output

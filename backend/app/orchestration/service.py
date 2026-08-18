@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol, cast
 
+from app.agents.policies import GuidanceLevel
 from app.logging.logger import logger
 from app.orchestration.schemas import (
     OrchestrationRequest,
@@ -46,6 +47,7 @@ class OrchestrationService:
             "session_id": request.session_id,
             "student_id": request.student_id,
             "user_message": request.user_message,
+            "guidance_level": GuidanceLevel.MINIMAL,
             "metadata": dict(request.metadata),
             "error": None,
         }

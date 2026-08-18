@@ -2,153 +2,143 @@ from __future__ import annotations
 
 import pytest
 
-from app.orchestration.graph import build_orchestration_graph
-from app.services.model_service.exceptions import ModelGenerationError
-from app.services.model_service.schemas import (
-    ModelChatRequest,
-    ModelChatResponse,
-    ModelEmbeddingRequest,
-    ModelEmbeddingResponse,
-    ModelHealthResponse,
+from app.agents.exceptions import (
+    AgentExecutionError,
 )
-from app.services.model_service.service import ModelService
+from app.agents.registry import AgentRegistry
+from app.agents.schemas import (
+    AgentName,
+    AgentRequest,
+    AgentResponse,
+)
+from app.orchestration.graph import (
+    build_orchestration_graph,
+)
 
 
-class FakeModelService(ModelService):
-    def __init__(self) -> None:
-        self.last_request: ModelChatRequest | None = None
-
-    async def generate(
+class FakeAgent:
+    def __init__(
         self,
-        request: ModelChatRequest,
-    ) -> ModelChatResponse:
+        name: AgentName,
+    ) -> None:
+        self._name = name
+        self.call_count = 0
+        self.last_request: AgentRequest | None = None
+
+    @property
+    def name(self) -> AgentName:
+        return self._name
+
+    async def execute(
+        self,
+        request: AgentRequest,
+    ) -> AgentResponse:
+        self.call_count += 1
         self.last_request = request
 
-        return ModelChatResponse(
-            content=f"Model response to: {request.messages[-1].content}",
-            model=request.model or "fake-model",
-            provider="ollama",
-            latency_ms=1.0,
+        return AgentResponse(
+            agent=self.name,
+            content=(f"{self.name} response to: {request.user_message}"),
+            metadata={
+                "fake_agent": True,
+            },
         )
 
-    async def embed(
+
+class FailingAgent(FakeAgent):
+    async def execute(
         self,
-        request: ModelEmbeddingRequest,
-    ) -> ModelEmbeddingResponse:
-        return ModelEmbeddingResponse(
-            embeddings=[[0.1, 0.2, 0.3] for _ in request.texts],
-            model=request.model or "fake-embedding-model",
-            provider="ollama",
-            latency_ms=1.0,
-        )
+        request: AgentRequest,
+    ) -> AgentResponse:
+        self.call_count += 1
+        self.last_request = request
 
-    async def health(self) -> ModelHealthResponse:
-        return ModelHealthResponse(
-            provider="ollama",
-            status="ok",
-            latency_ms=1.0,
-            chat_model="fake-model",
-            embedding_model="fake-embedding-model",
+        raise AgentExecutionError(
+            "Fake agent failed.",
+            agent=self.name,
+            details={
+                "reason": "test failure",
+            },
         )
 
 
-class FailingModelService(FakeModelService):
-    async def generate(self, request: ModelChatRequest) -> ModelChatResponse:
-        raise ModelGenerationError(
-            "ollama",
-            details={"reason": "test failure"},
-        )
+def create_registry() -> tuple[
+    AgentRegistry,
+    FakeAgent,
+    FakeAgent,
+    FakeAgent,
+]:
+    scenario = FakeAgent("scenario")
+
+    process_coach = FakeAgent("process_coach")
+
+    navigator = FakeAgent("ap_plus_navigator")
+
+    registry = AgentRegistry(
+        agents=[
+            scenario,
+            process_coach,
+            navigator,
+        ]
+    )
+
+    return (
+        registry,
+        scenario,
+        process_coach,
+        navigator,
+    )
 
 
 @pytest.mark.asyncio
-async def test_graph_generates_model_response() -> None:
-    graph = build_orchestration_graph(FakeModelService())
+async def test_graph_routes_to_scenario_agent() -> None:
+    (
+        registry,
+        scenario,
+        process_coach,
+        navigator,
+    ) = create_registry()
+
+    graph = build_orchestration_graph(
+        agent_registry=registry,
+    )
 
     result = await graph.ainvoke(
         {
             "session_id": "session-1",
             "student_id": "student-1",
-            "user_message": "Hello orchestration",
-            "metadata": {},
-        }
-    )
-
-    assert result["error"] is None
-    assert result["metadata"]["prepared"] is True
-    assert result["metadata"]["model_called"] is True
-    assert result["metadata"]["model_provider"] == "ollama"
-    assert result["metadata"]["finalized"] is True
-    assert result["final_response"] == "Model response to: Hello orchestration"
-
-
-@pytest.mark.asyncio
-async def test_graph_handles_empty_message_without_calling_model() -> None:
-    graph = build_orchestration_graph(FakeModelService())
-
-    result = await graph.ainvoke(
-        {
-            "session_id": "session-1",
-            "student_id": "student-1",
-            "user_message": "   ",
-            "metadata": {},
-        }
-    )
-
-    assert result["error"] == "User message cannot be empty."
-    assert result["metadata"]["prepared"] is False
-    assert result["metadata"].get("model_called") is None
-    assert result["metadata"]["finalized"] is True
-    assert result["final_response"] == (
-        "I could not process the message because: User message cannot be empty."
-    )
-
-
-@pytest.mark.asyncio
-async def test_graph_handles_model_service_error() -> None:
-    graph = build_orchestration_graph(FailingModelService())
-
-    result = await graph.ainvoke(
-        {
-            "session_id": "session-1",
-            "student_id": "student-1",
-            "user_message": "Hello",
-            "metadata": {},
-        }
-    )
-
-    assert result["error"] == "Model generation failed for provider: ollama"
-    assert result["metadata"]["model_error"]["error"] == "model_generation_error"
-    assert result["metadata"]["finalized"] is True
-    assert result["final_response"] == (
-        "I could not process the message because: Model generation failed for provider: ollama"
-    )
-
-
-@pytest.mark.asyncio
-async def test_graph_routes_to_scenario_path() -> None:
-    model_service = FakeModelService()
-    graph = build_orchestration_graph(model_service)
-
-    result = await graph.ainvoke(
-        {
-            "session_id": "session-1",
-            "student_id": "student-1",
-            "user_message": ("I want to define my company name and business problem."),
+            "user_message": ("I need to define my company name and business problem."),
             "metadata": {},
         }
     )
 
     assert result["route"] == "scenario"
-    assert result["metadata"]["selected_path"] == "scenario"
-    assert result["metadata"]["routing_completed"] is True
-    assert model_service.last_request is not None
-    assert "Scenario placeholder path" in model_service.last_request.messages[0].content
+
+    assert result["metadata"]["selected_agent"] == "scenario"
+
+    assert result["metadata"]["agent_called"] is True
+
+    assert scenario.call_count == 1
+    assert process_coach.call_count == 0
+    assert navigator.call_count == 0
+
+    assert result["final_response"] == (
+        "scenario response to: I need to define my company name and business problem."
+    )
 
 
 @pytest.mark.asyncio
-async def test_graph_routes_to_process_coach_path() -> None:
-    model_service = FakeModelService()
-    graph = build_orchestration_graph(model_service)
+async def test_graph_routes_to_process_coach_agent() -> None:
+    (
+        registry,
+        scenario,
+        process_coach,
+        navigator,
+    ) = create_registry()
+
+    graph = build_orchestration_graph(
+        agent_registry=registry,
+    )
 
     result = await graph.ainvoke(
         {
@@ -160,35 +150,61 @@ async def test_graph_routes_to_process_coach_path() -> None:
     )
 
     assert result["route"] == "process_coach"
-    assert result["metadata"]["selected_path"] == "process_coach"
-    assert model_service.last_request is not None
-    assert "Process Coach placeholder path" in model_service.last_request.messages[0].content
+
+    assert result["metadata"]["selected_agent"] == "process_coach"
+
+    assert scenario.call_count == 0
+    assert process_coach.call_count == 1
+    assert navigator.call_count == 0
+
+    assert result["final_response"].startswith("process_coach response")
 
 
 @pytest.mark.asyncio
-async def test_graph_routes_to_ap_plus_navigator_path() -> None:
-    model_service = FakeModelService()
-    graph = build_orchestration_graph(model_service)
+async def test_graph_routes_to_ap_plus_navigator_agent() -> None:
+    (
+        registry,
+        scenario,
+        process_coach,
+        navigator,
+    ) = create_registry()
+
+    graph = build_orchestration_graph(
+        agent_registry=registry,
+    )
 
     result = await graph.ainvoke(
         {
             "session_id": "session-1",
             "student_id": "student-1",
-            "user_message": ("Where can I find the purchase-order screen in AP+?"),
+            "user_message": ("Where can I find the purchase order screen in AP+?"),
             "metadata": {},
         }
     )
 
     assert result["route"] == "ap_plus_navigator"
-    assert result["metadata"]["selected_path"] == "ap_plus_navigator"
-    assert model_service.last_request is not None
-    assert "AP+ Navigator placeholder path" in model_service.last_request.messages[0].content
+
+    assert result["metadata"]["selected_agent"] == "ap_plus_navigator"
+
+    assert scenario.call_count == 0
+    assert process_coach.call_count == 0
+    assert navigator.call_count == 1
+
+    assert result["final_response"].startswith("ap_plus_navigator response")
 
 
 @pytest.mark.asyncio
-async def test_graph_routes_to_fallback_path() -> None:
-    model_service = FakeModelService()
-    graph = build_orchestration_graph(model_service)
+async def test_graph_uses_fallback_without_agent() -> None:
+    (
+        registry,
+        scenario,
+        process_coach,
+        navigator,
+    ) = create_registry()
+
+    graph = build_orchestration_graph(
+        agent_registry=registry,
+    )
 
     result = await graph.ainvoke(
         {
@@ -200,4 +216,149 @@ async def test_graph_routes_to_fallback_path() -> None:
     )
 
     assert result["route"] == "fallback"
-    assert result["metadata"]["selected_path"] == "fallback"
+
+    assert result["metadata"]["fallback_used"] is True
+
+    assert result["metadata"]["selected_agent"] is None
+
+    assert scenario.call_count == 0
+    assert process_coach.call_count == 0
+    assert navigator.call_count == 0
+
+    assert "business scenario" in result["final_response"]
+
+    assert "business-process reasoning" in result["final_response"]
+
+    assert "AP+" in result["final_response"]
+
+
+@pytest.mark.asyncio
+async def test_graph_does_not_invoke_agent_for_empty_input() -> None:
+    (
+        registry,
+        scenario,
+        process_coach,
+        navigator,
+    ) = create_registry()
+
+    graph = build_orchestration_graph(
+        agent_registry=registry,
+    )
+
+    result = await graph.ainvoke(
+        {
+            "session_id": "session-1",
+            "student_id": "student-1",
+            "user_message": "   ",
+            "metadata": {},
+        }
+    )
+
+    assert result["error"] == "User message cannot be empty."
+
+    assert result["metadata"]["prepared"] is False
+
+    assert result["metadata"]["finalized"] is True
+
+    assert scenario.call_count == 0
+    assert process_coach.call_count == 0
+    assert navigator.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_graph_converts_agent_failure_into_state_error() -> None:
+    scenario = FailingAgent("scenario")
+
+    registry = AgentRegistry(
+        agents=[
+            scenario,
+            FakeAgent("process_coach"),
+            FakeAgent("ap_plus_navigator"),
+        ]
+    )
+
+    graph = build_orchestration_graph(
+        agent_registry=registry,
+    )
+
+    result = await graph.ainvoke(
+        {
+            "session_id": "session-1",
+            "student_id": "student-1",
+            "user_message": ("I need help defining my business scenario."),
+            "metadata": {},
+        }
+    )
+
+    assert result["error"] == "Fake agent failed."
+
+    assert result["metadata"]["selected_agent"] == "scenario"
+
+    assert result["metadata"]["agent_error"]["error"] == "agent_execution_error"
+
+    assert result["metadata"]["finalized"] is True
+
+    assert result["final_response"] == (
+        "I could not process the message because: Fake agent failed."
+    )
+
+
+@pytest.mark.asyncio
+async def test_graph_passes_identity_to_agent() -> None:
+    (
+        registry,
+        scenario,
+        _,
+        _,
+    ) = create_registry()
+
+    graph = build_orchestration_graph(
+        agent_registry=registry,
+    )
+
+    await graph.ainvoke(
+        {
+            "session_id": "session-123",
+            "student_id": "student-456",
+            "user_message": ("Help me define my company scenario."),
+            "metadata": {
+                "source": "graph-test",
+            },
+        }
+    )
+
+    assert scenario.last_request is not None
+
+    assert scenario.last_request.session_id == "session-123"
+
+    assert scenario.last_request.student_id == "student-456"
+
+    assert scenario.last_request.user_message == "Help me define my company scenario."
+
+    @pytest.mark.asyncio
+    async def test_graph_handles_missing_registered_agent() -> None:
+        registry = AgentRegistry(
+            agents=[
+                FakeAgent("process_coach"),
+                FakeAgent("ap_plus_navigator"),
+            ]
+        )
+
+        graph = build_orchestration_graph(
+            agent_registry=registry,
+        )
+
+        result = await graph.ainvoke(
+            {
+                "session_id": "session-1",
+                "student_id": "student-1",
+                "user_message": ("I need help with my company scenario."),
+                "metadata": {},
+            }
+        )
+
+        assert result["metadata"]["agent_error"]["error"] == "agent_configuration_error"
+
+        assert result["metadata"]["selected_agent"] == "scenario"
+
+        assert "not registered" in result["error"]

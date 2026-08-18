@@ -1,113 +1,17 @@
 from __future__ import annotations
 
+from app.agents.exceptions import AgentError
+from app.agents.policies import GuidanceLevel
+from app.agents.registry import AgentRegistry
+from app.agents.schemas import AgentName, AgentRequest
 from app.orchestration.router import classify_route
-from app.orchestration.state import OrchestrationState, RouteName
-from app.services.model_service.exceptions import ModelServiceError
-from app.services.model_service.schemas import ModelChatRequest, ModelMessage
-from app.services.model_service.service import ModelService
-
-ROUTE_SYSTEM_INSTRUCTIONS: dict[RouteName, str] = {
-    "scenario": (
-        "You are currently operating through the Scenario placeholder path. "
-        "Help clarify the company context and business problem. "
-        "Do not provide AP+ procedural instructions."
-    ),
-    "process_coach": (
-        "You are currently operating through the Process Coach placeholder path. "
-        "Support business-process reasoning using brief guiding questions. "
-        "Do not provide a step-by-step tutorial."
-    ),
-    "ap_plus_navigator": (
-        "You are currently operating through the AP+ Navigator placeholder path. "
-        "Provide concise AP+-specific clarification without revealing an entire "
-        "step-by-step process."
-    ),
-    "fallback": (
-        "You are currently operating through the fallback placeholder path. "
-        "Respond briefly, acknowledge the request, and ask for clarification "
-        "when the learning intent is unclear."
-    ),
-}
+from app.orchestration.state import OrchestrationState
 
 
-def route_request_node(
+def prepare_input_node(
     state: OrchestrationState,
 ) -> OrchestrationState:
-    """Select a placeholder orchestration path deterministically."""
-
-    if state.get("error"):
-        return state
-
-    decision = classify_route(state["user_message"])
-    metadata = dict(state.get("metadata", {}))
-
-    return {
-        **state,
-        "route": decision.route,
-        "route_reason": decision.reason,
-        "metadata": {
-            **metadata,
-            "routing_completed": True,
-            "routing_strategy": "deterministic_keywords_v1",
-        },
-    }
-
-
-def scenario_path_node(
-    state: OrchestrationState,
-) -> OrchestrationState:
-    return _mark_selected_path(state, "scenario")
-
-
-def process_coach_path_node(
-    state: OrchestrationState,
-) -> OrchestrationState:
-    return _mark_selected_path(state, "process_coach")
-
-
-def ap_plus_navigator_path_node(
-    state: OrchestrationState,
-) -> OrchestrationState:
-    return _mark_selected_path(state, "ap_plus_navigator")
-
-
-def fallback_path_node(
-    state: OrchestrationState,
-) -> OrchestrationState:
-    return _mark_selected_path(state, "fallback")
-
-
-def _mark_selected_path(
-    state: OrchestrationState,
-    route: RouteName,
-) -> OrchestrationState:
-    """Record which placeholder route node was executed."""
-
-    metadata = dict(state.get("metadata", {}))
-
-    return {
-        **state,
-        "metadata": {
-            **metadata,
-            "selected_path": route,
-        },
-    }
-
-
-def prepare_input_node(state: OrchestrationState) -> OrchestrationState:
-    """Prepare and validate initial user input.
-
-    Sprint 2 version:
-    - trims the user message
-    - initializes metadata if missing
-    - records that input preparation happened
-
-    Later:
-    - load active context
-    - load session state
-    - attach checklist state
-    - attach retrieved context
-    """
+    """Prepare and validate initial user input."""
 
     user_message = state.get("user_message", "").strip()
     metadata = dict(state.get("metadata", {}))
@@ -134,61 +38,110 @@ def prepare_input_node(state: OrchestrationState) -> OrchestrationState:
     }
 
 
-async def model_response_node(
+def route_request_node(
     state: OrchestrationState,
-    model_service: ModelService,
 ) -> OrchestrationState:
-    """Generate a response through the selected Sprint 2 route."""
+    """Select the orchestration route."""
+
+    if state.get("error"):
+        return state
+
+    decision = classify_route(state["user_message"])
+
+    metadata = dict(state.get("metadata", {}))
+
+    return {
+        **state,
+        "route": decision.route,
+        "route_reason": decision.reason,
+        "metadata": {
+            **metadata,
+            "routing_completed": True,
+            "routing_strategy": "deterministic_keywords_v1",
+        },
+    }
+
+
+async def execute_agent_node(
+    state: OrchestrationState,
+    agent_registry: AgentRegistry,
+    agent_name: AgentName,
+) -> OrchestrationState:
+    """Execute one specialized agent selected by orchestration."""
 
     if state.get("error"):
         return state
 
     metadata = dict(state.get("metadata", {}))
-    route = state.get("route", "fallback")
 
-    request = ModelChatRequest(
-        messages=[
-            ModelMessage(
-                role="system",
-                content=(
-                    "You are FREDi, an educational AI learning environment. "
-                    f"{ROUTE_SYSTEM_INSTRUCTIONS[route]}"
-                ),
-            ),
-            ModelMessage(
-                role="user",
-                content=state["user_message"],
-            ),
-        ],
+    agent_request = AgentRequest(
+        session_id=state["session_id"],
+        student_id=state.get("student_id"),
+        user_message=state["user_message"],
+        guidance_level=state.get(
+            "guidance_level",
+            GuidanceLevel.MINIMAL,
+        ),
+        metadata=dict(metadata),
     )
 
     try:
-        response = await model_service.generate(request)
-    except ModelServiceError as exc:
+        agent = agent_registry.get(agent_name)
+
+        response = await agent.execute(agent_request)
+
+    except AgentError as exc:
         return {
             **state,
             "error": exc.message,
             "metadata": {
                 **metadata,
-                "model_error": exc.to_dict(),
+                "agent_error": exc.to_dict(),
+                "selected_agent": agent_name,
             },
         }
 
     return {
         **state,
-        "model_response": response.content,
+        "agent_response": response.content,
         "metadata": {
             **metadata,
-            "model_called": True,
-            "model": response.model,
-            "model_provider": response.provider,
-            "model_latency_ms": response.latency_ms,
+            "selected_agent": response.agent,
+            "agent_called": True,
+            "agent_metadata": dict(response.metadata),
         },
     }
 
 
-def finalize_response_node(state: OrchestrationState) -> OrchestrationState:
-    """Create the final response returned by the graph."""
+def fallback_response_node(
+    state: OrchestrationState,
+) -> OrchestrationState:
+    """Return a deterministic clarification for unmatched requests."""
+
+    if state.get("error"):
+        return state
+
+    metadata = dict(state.get("metadata", {}))
+
+    return {
+        **state,
+        "agent_response": (
+            "I'm not sure which type of help you need yet. "
+            "Are you asking about your business scenario, "
+            "the business-process reasoning, or how to work in AP+?"
+        ),
+        "metadata": {
+            **metadata,
+            "selected_agent": None,
+            "fallback_used": True,
+        },
+    }
+
+
+def finalize_response_node(
+    state: OrchestrationState,
+) -> OrchestrationState:
+    """Create the final response returned by orchestration."""
 
     metadata = dict(state.get("metadata", {}))
 
@@ -202,9 +155,11 @@ def finalize_response_node(state: OrchestrationState) -> OrchestrationState:
             },
         }
 
+    final_response = state.get("agent_response") or state.get("model_response") or ""
+
     return {
         **state,
-        "final_response": state.get("model_response", ""),
+        "final_response": final_response,
         "metadata": {
             **metadata,
             "finalized": True,

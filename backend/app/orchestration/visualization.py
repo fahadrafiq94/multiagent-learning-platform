@@ -21,7 +21,7 @@ class VisualizableCompiledGraph(Protocol):
 
 
 MERMAID_FRONTMATTER = """---
-title: FREDi Sprint 2 Orchestration Graph
+title: FREDi Agent Orchestration Graph
 config:
   theme: base
   look: classic
@@ -58,15 +58,15 @@ config:
 MERMAID_STYLES = """
 classDef inputNode fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#172554;
 classDef routingNode fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#2e1065;
-classDef routeNode fill:#ecfeff,stroke:#0891b2,stroke-width:2px,color:#164e63;
-classDef modelNode fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#14532d;
+classDef agentNode fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#14532d;
+classDef fallbackNode fill:#ffedd5,stroke:#ea580c,stroke-width:2px,color:#431407;
 classDef outputNode fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#451a03;
 classDef terminalNode fill:#f1f5f9,stroke:#475569,stroke-width:2px,color:#0f172a;
 
 class prepare_input inputNode;
 class route_request routingNode;
-class scenario_path,process_coach_path,ap_plus_navigator_path,fallback_path routeNode;
-class model_response modelNode;
+class scenario_agent,process_coach_agent,ap_plus_navigator_agent agentNode;
+class fallback_response fallbackNode;
 class finalize_response outputNode;
 class __start__,__end__ terminalNode;
 
