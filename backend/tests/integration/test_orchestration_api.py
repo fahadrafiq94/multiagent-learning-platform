@@ -63,10 +63,10 @@ def _routing_reason(
     route: RoutingTarget,
 ) -> str:
     reasons: dict[RoutingTarget, str] = {
-        "scenario": ("The student needs business-scenario clarification."),
-        "process_coach": ("The student needs business-process reasoning."),
-        "ap_plus_navigator": ("The student needs AP+ system guidance."),
-        "fallback": ("The student's immediate need cannot yet be determined."),
+        "scenario": "The student needs business-scenario clarification.",
+        "process_coach": "The student needs business-process reasoning.",
+        "ap_plus_navigator": "The student needs AP+ system guidance.",
+        "fallback": "The student's immediate need cannot yet be determined.",
     }
 
     return reasons[route]
@@ -82,9 +82,8 @@ def create_model_service(
 ]:
     """Create the ModelService test boundary for the full HTTP stack."""
 
-    model_service = cast(
-        ModelService,
-        MagicMock(spec=ModelService),
+    model_service_mock = MagicMock(
+        spec=ModelService,
     )
 
     requests: list[ModelChatRequest] = []
@@ -103,7 +102,6 @@ def create_model_service(
                     "reason": _routing_reason(route),
                 }
             )
-
         else:
             response_content = content
 
@@ -114,9 +112,16 @@ def create_model_service(
             latency_ms=5.0,
         )
 
-    generate_mock = AsyncMock(side_effect=generate)
+    generate_mock = AsyncMock(
+        side_effect=generate,
+    )
 
-    model_service.generate = generate_mock
+    model_service_mock.generate = generate_mock
+
+    model_service = cast(
+        ModelService,
+        model_service_mock,
+    )
 
     return (
         model_service,
@@ -217,9 +222,7 @@ def test_http_request_runs_complete_agent_stack(
     body = response.json()
 
     assert body["route"] == "scenario"
-
     assert body["metadata"]["selected_agent"] == "scenario"
-
     assert body["metadata"]["agent_called"] is True
 
     assert body["metadata"]["routing_strategy"] == "llm_semantic_router_v1"
@@ -227,7 +230,6 @@ def test_http_request_runs_complete_agent_stack(
     assert body["final_response"] == "Scenario integration response."
 
     assert generate_mock.await_count == 2
-
     assert len(requests) == 2
 
     assert len(_orchestrator_requests(requests)) == 1
@@ -336,17 +338,12 @@ def test_http_fallback_uses_only_orchestrator_model_call(
     body = response.json()
 
     assert body["route"] == "fallback"
-
     assert body["metadata"]["fallback_used"] is True
-
     assert body["metadata"]["selected_agent"] is None
-
     assert body["metadata"]["keyword_fallback_used"] is True
-
     assert body["metadata"]["keyword_route"] == "fallback"
 
     assert generate_mock.await_count == 1
-
     assert len(requests) == 1
 
     assert len(_orchestrator_requests(requests)) == 1
@@ -355,21 +352,25 @@ def test_http_fallback_uses_only_orchestrator_model_call(
 
 
 def test_http_model_failure_returns_controlled_response() -> None:
-    model_service = cast(
-        ModelService,
-        MagicMock(spec=ModelService),
+    model_service_mock = MagicMock(
+        spec=ModelService,
     )
 
     generate_mock = AsyncMock(
         side_effect=ModelGenerationError(
             "ollama",
             details={
-                "reason": "integration failure",
+                "reason": "API integration failure",
             },
         )
     )
 
-    model_service.generate = generate_mock
+    model_service_mock.generate = generate_mock
+
+    model_service = cast(
+        ModelService,
+        model_service_mock,
+    )
 
     service = build_service(model_service)
 
@@ -389,7 +390,6 @@ def test_http_model_failure_returns_controlled_response() -> None:
         app.dependency_overrides.clear()
 
     assert generate_mock.await_count == 2
-
     assert response.status_code == 200
 
     body = response.json()
