@@ -13,8 +13,22 @@ class Settings(BaseSettings):
 
     # Ollama
     ollama_base_url: str = "http://ollama:11434"
+
+    # Default chat model.
+    #
+    # Used whenever an agent does not provide its own model override.
     ollama_chat_model: str = "qwen3:4b"
+
     ollama_embedding_model: str = "nomic-embed-text-v2-moe"
+
+    # Per-agent model overrides.
+    #
+    # None means:
+    # "Use ollama_chat_model as the default."
+    orchestrator_model: str | None = None
+    scenario_agent_model: str | None = None
+    process_coach_agent_model: str | None = None
+    ap_plus_navigator_model: str | None = None
 
     # Model request behavior
     model_request_timeout_seconds: float = 120.0
@@ -28,7 +42,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        extra="ignore",  # Ignores any extra variables in .env without throwing errors
+        extra="ignore",
     )
 
 

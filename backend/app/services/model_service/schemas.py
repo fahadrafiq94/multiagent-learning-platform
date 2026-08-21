@@ -38,6 +38,7 @@ class ModelChatRequest(BaseModel):
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     max_tokens: int | None = Field(default=None, gt=0)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    response_schema: dict[str, Any] | None = None
 
     @field_validator("messages")
     @classmethod

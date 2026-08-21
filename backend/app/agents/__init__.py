@@ -6,8 +6,19 @@ from app.agents.exceptions import (
     AgentExecutionError,
 )
 from app.agents.factory import create_agent_registry
+from app.agents.orchestrator import (
+    ORCHESTRATOR_SYSTEM_PROMPT,
+    OrchestratorAgent,
+    OrchestratorRoutingError,
+)
 from app.agents.process_coach import ProcessCoachAgent
 from app.agents.registry import AgentRegistry
+from app.agents.routing import (
+    OrchestratorRequest,
+    OrchestratorResult,
+    RoutingDecision,
+    RoutingTarget,
+)
 from app.agents.scenario import ScenarioAgent
 from app.agents.schemas import (
     AgentName,
@@ -28,4 +39,11 @@ __all__ = [
     "ProcessCoachAgent",
     "ScenarioAgent",
     "create_agent_registry",
+    "ORCHESTRATOR_SYSTEM_PROMPT",
+    "OrchestratorAgent",
+    "OrchestratorRoutingError",
+    "OrchestratorRequest",
+    "OrchestratorResult",
+    "RoutingDecision",
+    "RoutingTarget",
 ]

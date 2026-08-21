@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
@@ -9,6 +10,7 @@ from app.agents.ap_plus_navigator import (
     AP_PLUS_NAVIGATOR_SYSTEM_PROMPT,
 )
 from app.agents.factory import create_agent_registry
+from app.agents.orchestrator import OrchestratorAgent
 from app.agents.policies import (
     AP_PLUS_NAVIGATOR_GUIDANCE,
     PROCESS_COACH_GUIDANCE,
@@ -18,12 +20,19 @@ from app.agents.policies import (
 from app.agents.process_coach import (
     PROCESS_COACH_SYSTEM_PROMPT,
 )
+from app.agents.routing import RoutingTarget
 from app.agents.scenario import (
     SCENARIO_AGENT_SYSTEM_PROMPT,
 )
-from app.orchestration.graph import build_orchestration_graph
-from app.orchestration.schemas import OrchestrationRequest
-from app.orchestration.service import OrchestrationService
+from app.orchestration.graph import (
+    build_orchestration_graph,
+)
+from app.orchestration.schemas import (
+    OrchestrationRequest,
+)
+from app.orchestration.service import (
+    OrchestrationService,
+)
 from app.services.model_service import ModelService
 from app.services.model_service.exceptions import (
     ModelGenerationError,
@@ -34,6 +43,54 @@ from app.services.model_service.schemas import (
 )
 
 
+def _semantic_route_for_message(
+    user_message: str,
+) -> RoutingTarget:
+    """Return a deterministic fake semantic-model decision.
+
+    Integration tests mock the ModelService boundary. This helper simulates
+    what the routing model would return without replacing the real
+    OrchestratorAgent implementation.
+    """
+
+    normalized = " ".join(user_message.lower().split())
+
+    if (
+        "ap+" in normalized
+        or "where can i find" in normalized
+        or "where should i enter" in normalized
+    ):
+        return "ap_plus_navigator"
+
+    if (
+        "why" in normalized
+        or "procurement" in normalized
+        or "business process" in normalized
+        or "purchase order" in normalized
+    ):
+        return "process_coach"
+
+    if "company" in normalized or "scenario" in normalized or "business problem" in normalized:
+        return "scenario"
+
+    return "fallback"
+
+
+def _routing_reason(
+    route: RoutingTarget,
+) -> str:
+    """Return a valid fake routing reason for one semantic route."""
+
+    reasons: dict[RoutingTarget, str] = {
+        "scenario": ("The student needs business-scenario clarification."),
+        "process_coach": ("The student needs business-process reasoning."),
+        "ap_plus_navigator": ("The student needs AP+ system guidance."),
+        "fallback": ("The student's immediate need cannot yet be determined."),
+    }
+
+    return reasons[route]
+
+
 def create_recording_model_service(
     *,
     response_content: str = "Fake integrated model response.",
@@ -42,7 +99,12 @@ def create_recording_model_service(
     AsyncMock,
     list[ModelChatRequest],
 ]:
-    """Create a fake ModelService that records every generation request."""
+    """Create a fake ModelService that records every generation request.
+
+    Structured-output requests simulate the semantic routing model.
+
+    Normal chat requests simulate the selected specialist agent.
+    """
 
     model_service = cast(
         ModelService,
@@ -56,8 +118,23 @@ def create_recording_model_service(
     ) -> ModelChatResponse:
         requests.append(request)
 
+        if request.response_schema is not None:
+            user_message = request.messages[-1].content
+
+            route = _semantic_route_for_message(user_message)
+
+            content = json.dumps(
+                {
+                    "route": route,
+                    "reason": _routing_reason(route),
+                }
+            )
+
+        else:
+            content = response_content
+
         return ModelChatResponse(
-            content=response_content,
+            content=content,
             model="fake-model",
             provider="ollama",
             latency_ms=5.0,
@@ -65,7 +142,7 @@ def create_recording_model_service(
 
     generate_mock = AsyncMock(side_effect=generate)
 
-    model_service.generate = generate_mock  # type: ignore[method-assign]
+    model_service.generate = generate_mock
 
     return (
         model_service,
@@ -83,13 +160,34 @@ def create_orchestration_service(
         model_service=model_service,
     )
 
+    orchestrator = OrchestratorAgent(
+        model_service=model_service,
+    )
+
     graph = build_orchestration_graph(
         agent_registry=agent_registry,
+        orchestrator=orchestrator,
     )
 
     return OrchestrationService(
         graph=graph,
     )
+
+
+def _orchestrator_requests(
+    requests: list[ModelChatRequest],
+) -> list[ModelChatRequest]:
+    """Return semantic-routing model requests."""
+
+    return [request for request in requests if request.response_schema is not None]
+
+
+def _agent_requests(
+    requests: list[ModelChatRequest],
+) -> list[ModelChatRequest]:
+    """Return specialist-agent model requests."""
+
+    return [request for request in requests if request.response_schema is None]
 
 
 @pytest.mark.asyncio
@@ -120,15 +218,24 @@ async def test_scenario_request_executes_real_scenario_agent() -> None:
 
     assert response.metadata["agent_called"] is True
 
+    assert response.metadata["routing_strategy"] == "llm_semantic_router_v1"
+
+    assert response.metadata["keyword_fallback_used"] is False
+
     assert response.final_response == (
         "What business problem is the bicycle company trying to solve?"
     )
 
-    generate_mock.assert_awaited_once()
+    assert generate_mock.await_count == 2
+    assert len(requests) == 2
 
-    assert len(requests) == 1
+    assert len(_orchestrator_requests(requests)) == 1
 
-    system_prompt = requests[0].messages[0].content
+    agent_requests = _agent_requests(requests)
+
+    assert len(agent_requests) == 1
+
+    system_prompt = agent_requests[0].messages[0].content
 
     assert SCENARIO_AGENT_SYSTEM_PROMPT in system_prompt
 
@@ -169,11 +276,14 @@ async def test_process_request_executes_real_process_coach() -> None:
 
     assert response.metadata["agent_metadata"]["guidance_level"] == "minimal"
 
-    generate_mock.assert_awaited_once()
+    assert generate_mock.await_count == 2
+    assert len(requests) == 2
 
-    assert len(requests) == 1
+    agent_requests = _agent_requests(requests)
 
-    system_prompt = requests[0].messages[0].content
+    assert len(agent_requests) == 1
+
+    system_prompt = agent_requests[0].messages[0].content
 
     assert PROCESS_COACH_SYSTEM_PROMPT in system_prompt
 
@@ -210,18 +320,19 @@ async def test_ap_plus_request_executes_real_navigator() -> None:
 
     assert response.metadata["agent_metadata"]["guidance_mode"] == "system_navigation"
 
-    generate_mock.assert_awaited_once()
+    assert generate_mock.await_count == 2
+    assert len(requests) == 2
 
-    assert len(requests) == 1
+    agent_requests = _agent_requests(requests)
 
-    system_prompt = requests[0].messages[0].content
+    assert len(agent_requests) == 1
+
+    system_prompt = agent_requests[0].messages[0].content
 
     assert AP_PLUS_NAVIGATOR_SYSTEM_PROMPT in system_prompt
 
     assert AP_PLUS_NAVIGATOR_GUIDANCE[GuidanceLevel.MINIMAL] in system_prompt
 
-    # Grounding rules must remain present in the real
-    # orchestration -> agent -> model path.
     prompt_lower = system_prompt.lower()
 
     assert "never invent ap+ menu names" in prompt_lower
@@ -232,7 +343,7 @@ async def test_ap_plus_request_executes_real_navigator() -> None:
 
 
 @pytest.mark.asyncio
-async def test_fallback_does_not_call_model_or_agent() -> None:
+async def test_fallback_uses_only_orchestrator_model_call() -> None:
     (
         model_service,
         generate_mock,
@@ -255,13 +366,20 @@ async def test_fallback_does_not_call_model_or_agent() -> None:
 
     assert response.metadata["selected_agent"] is None
 
-    generate_mock.assert_not_awaited()
+    assert response.metadata["keyword_fallback_used"] is True
 
-    assert requests == []
+    assert response.metadata["keyword_route"] == "fallback"
 
-    assert "business scenario" in (response.final_response)
+    assert generate_mock.await_count == 1
+    assert len(requests) == 1
 
-    assert "business-process reasoning" in (response.final_response)
+    assert len(_orchestrator_requests(requests)) == 1
+
+    assert _agent_requests(requests) == []
+
+    assert "business scenario" in response.final_response
+
+    assert "business-process reasoning" in response.final_response
 
     assert "AP+" in response.final_response
 
@@ -284,8 +402,12 @@ async def test_exactly_one_agent_model_call_occurs_per_routed_request() -> None:
         )
     )
 
-    assert generate_mock.await_count == 1
-    assert len(requests) == 1
+    # One semantic orchestrator call + one specialist call.
+    assert generate_mock.await_count == 2
+
+    assert len(_orchestrator_requests(requests)) == 1
+
+    assert len(_agent_requests(requests)) == 1
 
 
 @pytest.mark.asyncio
@@ -306,9 +428,11 @@ async def test_default_guidance_level_reaches_agent() -> None:
         )
     )
 
-    assert len(requests) == 1
+    agent_requests = _agent_requests(requests)
 
-    system_prompt = requests[0].messages[0].content
+    assert len(agent_requests) == 1
+
+    system_prompt = agent_requests[0].messages[0].content
 
     assert "Guidance level: minimal" in system_prompt
 
@@ -331,7 +455,7 @@ async def test_model_failure_isolated_as_controlled_agent_error() -> None:
         )
     )
 
-    model_service.generate = generate_mock  # type: ignore[method-assign]
+    model_service.generate = generate_mock
 
     service = create_orchestration_service(model_service)
 
@@ -343,7 +467,16 @@ async def test_model_failure_isolated_as_controlled_agent_error() -> None:
         )
     )
 
+    # The semantic router fails first.
+    # Static keyword recovery selects scenario.
+    # The Scenario Agent then encounters the same model failure.
+    assert generate_mock.await_count == 2
+
     assert response.route == "scenario"
+
+    assert response.metadata["keyword_fallback_trigger"] == "orchestrator_error"
+
+    assert response.metadata["semantic_routing_failed"] is True
 
     assert response.error == ("Scenario Agent could not generate a response.")
 
@@ -365,7 +498,7 @@ async def test_student_identity_survives_full_orchestration_flow() -> None:
     (
         model_service,
         _,
-        _,
+        requests,
     ) = create_recording_model_service()
 
     service = create_orchestration_service(model_service)
@@ -379,7 +512,14 @@ async def test_student_identity_survives_full_orchestration_flow() -> None:
     )
 
     assert response.session_id == "session-123"
+
     assert response.student_id == "student-456"
+
+    orchestrator_requests = _orchestrator_requests(requests)
+
+    assert len(orchestrator_requests) == 1
+
+    assert orchestrator_requests[0].messages[-1].content == "Help me define my company scenario."
 
 
 @pytest.mark.asyncio
@@ -409,3 +549,11 @@ async def test_agent_model_metadata_survives_full_flow() -> None:
     assert agent_metadata["model_latency_ms"] == 5.0
 
     assert agent_metadata["guidance_level"] == "minimal"
+
+    orchestrator_metadata = response.metadata["orchestrator_metadata"]
+
+    assert orchestrator_metadata["model"] == "fake-model"
+
+    assert orchestrator_metadata["model_provider"] == "ollama"
+
+    assert orchestrator_metadata["routing_strategy"] == "llm_semantic_router_v1"

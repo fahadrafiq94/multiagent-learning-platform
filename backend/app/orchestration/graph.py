@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 
+from app.agents.orchestrator import OrchestratorAgent
 from app.agents.registry import AgentRegistry
 from app.orchestration.nodes import (
     execute_agent_node,
@@ -18,9 +19,27 @@ from app.orchestration.state import OrchestrationState
 
 
 def build_orchestration_graph(
+    *,
     agent_registry: AgentRegistry,
+    orchestrator: OrchestratorAgent,
 ):
-    """Build the Sprint 3 orchestration graph."""
+    """Build the Sprint 3 orchestration graph.
+
+    Semantic routing is performed by the OrchestratorAgent.
+
+    The graph receives configured dependencies through closures so LangGraph
+    nodes themselves continue to operate on OrchestrationState.
+    """
+
+    async def semantic_route_request_node(
+        state: OrchestrationState,
+    ) -> OrchestrationState:
+        """Run semantic routing with deterministic keyword fallback."""
+
+        return await route_request_node(
+            state=state,
+            orchestrator=orchestrator,
+        )
 
     async def scenario_agent_node(
         state: OrchestrationState,
@@ -58,7 +77,7 @@ def build_orchestration_graph(
 
     graph.add_node(
         "route_request",
-        route_request_node,
+        semantic_route_request_node,
     )
 
     graph.add_node(

@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from app.agents.exceptions import (
     AgentExecutionError,
 )
+from app.agents.orchestrator import (
+    OrchestratorAgent,
+    OrchestratorRoutingError,
+)
 from app.agents.registry import AgentRegistry
+from app.agents.routing import (
+    OrchestratorRequest,
+    OrchestratorResult,
+    RoutingDecision,
+    RoutingTarget,
+)
 from app.agents.schemas import (
     AgentName,
     AgentRequest,
@@ -62,6 +74,59 @@ class FailingAgent(FakeAgent):
         )
 
 
+class FakeOrchestrator:
+    """Configurable semantic orchestrator used by graph tests."""
+
+    def __init__(
+        self,
+        route: RoutingTarget,
+        reason: str = "Fake semantic routing decision.",
+    ) -> None:
+        self._route = route
+        self._reason = reason
+
+        self.call_count = 0
+        self.last_request: OrchestratorRequest | None = None
+
+    async def route(
+        self,
+        request: OrchestratorRequest,
+    ) -> OrchestratorResult:
+        self.call_count += 1
+        self.last_request = request
+
+        return OrchestratorResult(
+            decision=RoutingDecision(
+                route=self._route,
+                reason=self._reason,
+            ),
+            metadata={
+                "routing_strategy": ("llm_semantic_router_v1"),
+                "fake_orchestrator": True,
+            },
+        )
+
+
+class FailingOrchestrator:
+    """Semantic orchestrator that simulates model routing failure."""
+
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    async def route(
+        self,
+        request: OrchestratorRequest,
+    ) -> OrchestratorResult:
+        self.call_count += 1
+
+        raise OrchestratorRoutingError(
+            "Fake semantic routing failure.",
+            details={
+                "reason": "test failure",
+            },
+        )
+
+
 def create_registry() -> tuple[
     AgentRegistry,
     FakeAgent,
@@ -90,6 +155,20 @@ def create_registry() -> tuple[
     )
 
 
+def build_test_graph(
+    *,
+    registry: AgentRegistry,
+    orchestrator: FakeOrchestrator | FailingOrchestrator,
+):
+    return build_orchestration_graph(
+        agent_registry=registry,
+        orchestrator=cast(
+            OrchestratorAgent,
+            orchestrator,
+        ),
+    )
+
+
 @pytest.mark.asyncio
 async def test_graph_routes_to_scenario_agent() -> None:
     (
@@ -99,15 +178,21 @@ async def test_graph_routes_to_scenario_agent() -> None:
         navigator,
     ) = create_registry()
 
-    graph = build_orchestration_graph(
-        agent_registry=registry,
+    orchestrator = FakeOrchestrator(
+        route="scenario",
+        reason=("The student needs scenario clarification."),
+    )
+
+    graph = build_test_graph(
+        registry=registry,
+        orchestrator=orchestrator,
     )
 
     result = await graph.ainvoke(
         {
             "session_id": "session-1",
             "student_id": "student-1",
-            "user_message": ("I need to define my company name and business problem."),
+            "user_message": ("Tell me more about the situation I am working with."),
             "metadata": {},
         }
     )
@@ -118,13 +203,15 @@ async def test_graph_routes_to_scenario_agent() -> None:
 
     assert result["metadata"]["agent_called"] is True
 
+    assert result["metadata"]["routing_strategy"] == "llm_semantic_router_v1"
+
+    assert result["metadata"]["keyword_fallback_used"] is False
+
     assert scenario.call_count == 1
     assert process_coach.call_count == 0
     assert navigator.call_count == 0
 
-    assert result["final_response"] == (
-        "scenario response to: I need to define my company name and business problem."
-    )
+    assert orchestrator.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -136,8 +223,132 @@ async def test_graph_routes_to_process_coach_agent() -> None:
         navigator,
     ) = create_registry()
 
-    graph = build_orchestration_graph(
-        agent_registry=registry,
+    orchestrator = FakeOrchestrator(
+        route="process_coach",
+        reason=("The student needs business-process reasoning."),
+    )
+
+    graph = build_test_graph(
+        registry=registry,
+        orchestrator=orchestrator,
+    )
+
+    result = await graph.ainvoke(
+        {
+            "session_id": "session-1",
+            "student_id": "student-1",
+            "user_message": (
+                "I understand the software action, but I do not understand its purpose."
+            ),
+            "metadata": {},
+        }
+    )
+
+    assert result["route"] == "process_coach"
+
+    assert result["metadata"]["selected_agent"] == "process_coach"
+
+    assert scenario.call_count == 0
+    assert process_coach.call_count == 1
+    assert navigator.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_graph_routes_to_ap_plus_navigator_agent() -> None:
+    (
+        registry,
+        scenario,
+        process_coach,
+        navigator,
+    ) = create_registry()
+
+    orchestrator = FakeOrchestrator(
+        route="ap_plus_navigator",
+        reason=("The student needs help executing an action in AP+."),
+    )
+
+    graph = build_test_graph(
+        registry=registry,
+        orchestrator=orchestrator,
+    )
+
+    result = await graph.ainvoke(
+        {
+            "session_id": "session-1",
+            "student_id": "student-1",
+            "user_message": (
+                "I know the supplier must be recorded, but I cannot figure out how to do it."
+            ),
+            "metadata": {},
+        }
+    )
+
+    assert result["route"] == "ap_plus_navigator"
+
+    assert result["metadata"]["selected_agent"] == "ap_plus_navigator"
+
+    assert scenario.call_count == 0
+    assert process_coach.call_count == 0
+    assert navigator.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_graph_uses_keyword_router_after_semantic_fallback() -> None:
+    (
+        registry,
+        scenario,
+        process_coach,
+        navigator,
+    ) = create_registry()
+
+    orchestrator = FakeOrchestrator(
+        route="fallback",
+        reason=("The semantic router cannot determine the student's need."),
+    )
+
+    graph = build_test_graph(
+        registry=registry,
+        orchestrator=orchestrator,
+    )
+
+    result = await graph.ainvoke(
+        {
+            "session_id": "session-1",
+            "student_id": "student-1",
+            "user_message": ("Where can I find this field in AP+?"),
+            "metadata": {},
+        }
+    )
+
+    assert result["route"] == "ap_plus_navigator"
+
+    assert result["metadata"]["keyword_fallback_used"] is True
+
+    assert result["metadata"]["keyword_fallback_trigger"] == "semantic_fallback"
+
+    assert result["metadata"]["semantic_route"] == "fallback"
+
+    assert result["metadata"]["keyword_route"] == "ap_plus_navigator"
+
+    assert navigator.call_count == 1
+    assert scenario.call_count == 0
+    assert process_coach.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_graph_uses_keyword_router_after_orchestrator_error() -> None:
+    (
+        registry,
+        scenario,
+        process_coach,
+        navigator,
+    ) = create_registry()
+
+    orchestrator = FailingOrchestrator()
+
+    graph = build_test_graph(
+        registry=registry,
+        orchestrator=orchestrator,
     )
 
     result = await graph.ainvoke(
@@ -151,17 +362,21 @@ async def test_graph_routes_to_process_coach_agent() -> None:
 
     assert result["route"] == "process_coach"
 
-    assert result["metadata"]["selected_agent"] == "process_coach"
+    assert result["metadata"]["keyword_fallback_used"] is True
 
-    assert scenario.call_count == 0
+    assert result["metadata"]["keyword_fallback_trigger"] == "orchestrator_error"
+
+    assert result["metadata"]["semantic_routing_failed"] is True
+
+    assert result["metadata"]["keyword_route"] == "process_coach"
+
     assert process_coach.call_count == 1
-    assert navigator.call_count == 0
 
-    assert result["final_response"].startswith("process_coach response")
+    assert orchestrator.call_count == 1
 
 
 @pytest.mark.asyncio
-async def test_graph_routes_to_ap_plus_navigator_agent() -> None:
+async def test_graph_uses_clarification_when_both_routers_fallback() -> None:
     (
         registry,
         scenario,
@@ -169,41 +384,14 @@ async def test_graph_routes_to_ap_plus_navigator_agent() -> None:
         navigator,
     ) = create_registry()
 
-    graph = build_orchestration_graph(
-        agent_registry=registry,
+    orchestrator = FakeOrchestrator(
+        route="fallback",
+        reason=("The semantic router cannot determine the student's need."),
     )
 
-    result = await graph.ainvoke(
-        {
-            "session_id": "session-1",
-            "student_id": "student-1",
-            "user_message": ("Where can I find the purchase order screen in AP+?"),
-            "metadata": {},
-        }
-    )
-
-    assert result["route"] == "ap_plus_navigator"
-
-    assert result["metadata"]["selected_agent"] == "ap_plus_navigator"
-
-    assert scenario.call_count == 0
-    assert process_coach.call_count == 0
-    assert navigator.call_count == 1
-
-    assert result["final_response"].startswith("ap_plus_navigator response")
-
-
-@pytest.mark.asyncio
-async def test_graph_uses_fallback_without_agent() -> None:
-    (
-        registry,
-        scenario,
-        process_coach,
-        navigator,
-    ) = create_registry()
-
-    graph = build_orchestration_graph(
-        agent_registry=registry,
+    graph = build_test_graph(
+        registry=registry,
+        orchestrator=orchestrator,
     )
 
     result = await graph.ainvoke(
@@ -216,6 +404,10 @@ async def test_graph_uses_fallback_without_agent() -> None:
     )
 
     assert result["route"] == "fallback"
+
+    assert result["metadata"]["keyword_fallback_used"] is True
+
+    assert result["metadata"]["keyword_route"] == "fallback"
 
     assert result["metadata"]["fallback_used"] is True
 
@@ -233,7 +425,7 @@ async def test_graph_uses_fallback_without_agent() -> None:
 
 
 @pytest.mark.asyncio
-async def test_graph_does_not_invoke_agent_for_empty_input() -> None:
+async def test_graph_does_not_route_empty_input() -> None:
     (
         registry,
         scenario,
@@ -241,8 +433,13 @@ async def test_graph_does_not_invoke_agent_for_empty_input() -> None:
         navigator,
     ) = create_registry()
 
-    graph = build_orchestration_graph(
-        agent_registry=registry,
+    orchestrator = FakeOrchestrator(
+        route="scenario",
+    )
+
+    graph = build_test_graph(
+        registry=registry,
+        orchestrator=orchestrator,
     )
 
     result = await graph.ainvoke(
@@ -259,6 +456,8 @@ async def test_graph_does_not_invoke_agent_for_empty_input() -> None:
     assert result["metadata"]["prepared"] is False
 
     assert result["metadata"]["finalized"] is True
+
+    assert orchestrator.call_count == 0
 
     assert scenario.call_count == 0
     assert process_coach.call_count == 0
@@ -277,15 +476,20 @@ async def test_graph_converts_agent_failure_into_state_error() -> None:
         ]
     )
 
-    graph = build_orchestration_graph(
-        agent_registry=registry,
+    orchestrator = FakeOrchestrator(
+        route="scenario",
+    )
+
+    graph = build_test_graph(
+        registry=registry,
+        orchestrator=orchestrator,
     )
 
     result = await graph.ainvoke(
         {
             "session_id": "session-1",
             "student_id": "student-1",
-            "user_message": ("I need help defining my business scenario."),
+            "user_message": ("I need help understanding the scenario."),
             "metadata": {},
         }
     )
@@ -304,7 +508,7 @@ async def test_graph_converts_agent_failure_into_state_error() -> None:
 
 
 @pytest.mark.asyncio
-async def test_graph_passes_identity_to_agent() -> None:
+async def test_graph_passes_identity_to_orchestrator_and_agent() -> None:
     (
         registry,
         scenario,
@@ -312,20 +516,31 @@ async def test_graph_passes_identity_to_agent() -> None:
         _,
     ) = create_registry()
 
-    graph = build_orchestration_graph(
-        agent_registry=registry,
+    orchestrator = FakeOrchestrator(
+        route="scenario",
+    )
+
+    graph = build_test_graph(
+        registry=registry,
+        orchestrator=orchestrator,
     )
 
     await graph.ainvoke(
         {
             "session_id": "session-123",
             "student_id": "student-456",
-            "user_message": ("Help me define my company scenario."),
+            "user_message": ("Help me understand my situation."),
             "metadata": {
                 "source": "graph-test",
             },
         }
     )
+
+    assert orchestrator.last_request is not None
+
+    assert orchestrator.last_request.session_id == "session-123"
+
+    assert orchestrator.last_request.student_id == "student-456"
 
     assert scenario.last_request is not None
 
@@ -333,32 +548,36 @@ async def test_graph_passes_identity_to_agent() -> None:
 
     assert scenario.last_request.student_id == "student-456"
 
-    assert scenario.last_request.user_message == "Help me define my company scenario."
 
-    @pytest.mark.asyncio
-    async def test_graph_handles_missing_registered_agent() -> None:
-        registry = AgentRegistry(
-            agents=[
-                FakeAgent("process_coach"),
-                FakeAgent("ap_plus_navigator"),
-            ]
-        )
+@pytest.mark.asyncio
+async def test_graph_handles_missing_registered_agent() -> None:
+    registry = AgentRegistry(
+        agents=[
+            FakeAgent("process_coach"),
+            FakeAgent("ap_plus_navigator"),
+        ]
+    )
 
-        graph = build_orchestration_graph(
-            agent_registry=registry,
-        )
+    orchestrator = FakeOrchestrator(
+        route="scenario",
+    )
 
-        result = await graph.ainvoke(
-            {
-                "session_id": "session-1",
-                "student_id": "student-1",
-                "user_message": ("I need help with my company scenario."),
-                "metadata": {},
-            }
-        )
+    graph = build_test_graph(
+        registry=registry,
+        orchestrator=orchestrator,
+    )
 
-        assert result["metadata"]["agent_error"]["error"] == "agent_configuration_error"
+    result = await graph.ainvoke(
+        {
+            "session_id": "session-1",
+            "student_id": "student-1",
+            "user_message": ("I need help understanding the scenario."),
+            "metadata": {},
+        }
+    )
 
-        assert result["metadata"]["selected_agent"] == "scenario"
+    assert result["metadata"]["agent_error"]["error"] == "agent_configuration_error"
 
-        assert "not registered" in result["error"]
+    assert result["metadata"]["selected_agent"] == "scenario"
+
+    assert "not registered" in result["error"]

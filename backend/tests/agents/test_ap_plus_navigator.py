@@ -469,3 +469,59 @@ async def test_ap_plus_navigator_preserves_model_error_as_cause() -> None:
         await agent.execute(create_request())
 
     assert exc_info.value.__cause__ is model_error
+
+
+@pytest.mark.asyncio
+async def test_ap_plus_navigator_uses_configured_model() -> None:
+    model_service = create_model_service_mock()
+    generate_mock = get_generate_mock(model_service)
+
+    generate_mock.return_value = ModelChatResponse(
+        content="Which AP+ screen are you currently viewing?",
+        model="ap-plus-model",
+        provider="ollama",
+        latency_ms=10.0,
+    )
+
+    agent = APPlusNavigatorAgent(
+        model_service=model_service,
+        model="ap-plus-model",
+    )
+
+    await agent.execute(create_request())
+
+    generated_request = (
+        generate_mock.await_args.args[0]  # type: ignore[union-attr]
+    )
+
+    assert isinstance(
+        generated_request,
+        ModelChatRequest,
+    )
+
+    assert generated_request.model == "ap-plus-model"
+
+
+@pytest.mark.asyncio
+async def test_ap_plus_navigator_leaves_model_unset_by_default() -> None:
+    model_service = create_model_service_mock()
+    generate_mock = get_generate_mock(model_service)
+
+    generate_mock.return_value = ModelChatResponse(
+        content="Which screen are you viewing?",
+        model="default-model",
+        provider="ollama",
+        latency_ms=10.0,
+    )
+
+    agent = APPlusNavigatorAgent(
+        model_service=model_service,
+    )
+
+    await agent.execute(create_request())
+
+    generated_request = (
+        generate_mock.await_args.args[0]  # type: ignore[union-attr]
+    )
+
+    assert generated_request.model is None

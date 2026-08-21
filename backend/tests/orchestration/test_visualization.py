@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
+from app.agents.orchestrator import OrchestratorAgent
 from app.agents.registry import AgentRegistry
+from app.agents.routing import (
+    OrchestratorRequest,
+    OrchestratorResult,
+    RoutingDecision,
+)
 from app.agents.schemas import (
     AgentName,
     AgentRequest,
@@ -64,6 +71,28 @@ class FakeAgent:
         )
 
 
+class FakeOrchestrator:
+    """Minimal semantic orchestrator used to compile the real graph.
+
+    Visualization tests do not execute routing. The fake exists only because
+    the Sprint 3 graph now requires an OrchestratorAgent dependency.
+    """
+
+    async def route(
+        self,
+        request: OrchestratorRequest,
+    ) -> OrchestratorResult:
+        return OrchestratorResult(
+            decision=RoutingDecision(
+                route="fallback",
+                reason="Visualization test routing decision.",
+            ),
+            metadata={
+                "routing_strategy": "fake_visualization_router",
+            },
+        )
+
+
 def create_agent_registry() -> AgentRegistry:
     """Create all specialized agents required by the graph."""
 
@@ -73,6 +102,15 @@ def create_agent_registry() -> AgentRegistry:
             FakeAgent("process_coach"),
             FakeAgent("ap_plus_navigator"),
         ]
+    )
+
+
+def create_orchestrator() -> OrchestratorAgent:
+    """Create the fake orchestrator dependency required by the graph."""
+
+    return cast(
+        OrchestratorAgent,
+        FakeOrchestrator(),
     )
 
 
@@ -90,7 +128,9 @@ def test_export_graph_mermaid_creates_styled_file(
     assert output_path.exists()
     assert output_path.is_file()
 
-    content = output_path.read_text(encoding="utf-8")
+    content = output_path.read_text(
+        encoding="utf-8",
+    )
 
     assert "title: FREDi Agent Orchestration Graph" in content
 
@@ -157,7 +197,9 @@ def test_export_replaces_existing_frontmatter(
         output_path=output_path,
     )
 
-    content = output_path.read_text(encoding="utf-8")
+    content = output_path.read_text(
+        encoding="utf-8",
+    )
 
     # The fake graph contains its own frontmatter.
     # The exporter must replace it with FREDi's styling.
@@ -228,6 +270,7 @@ def test_real_graph_mermaid_contains_expected_nodes() -> None:
 
     graph = build_orchestration_graph(
         agent_registry=registry,
+        orchestrator=create_orchestrator(),
     )
 
     mermaid_source = graph.get_graph().draw_mermaid()
@@ -251,6 +294,7 @@ def test_real_graph_mermaid_does_not_contain_old_nodes() -> None:
 
     graph = build_orchestration_graph(
         agent_registry=registry,
+        orchestrator=create_orchestrator(),
     )
 
     mermaid_source = graph.get_graph().draw_mermaid()
@@ -272,6 +316,7 @@ def test_real_graph_mermaid_contains_start_and_end() -> None:
 
     graph = build_orchestration_graph(
         agent_registry=registry,
+        orchestrator=create_orchestrator(),
     )
 
     mermaid_source = graph.get_graph().draw_mermaid()
@@ -285,11 +330,15 @@ def test_real_graph_has_specialized_agent_branches() -> None:
 
     graph = build_orchestration_graph(
         agent_registry=registry,
+        orchestrator=create_orchestrator(),
     )
 
     mermaid_source = graph.get_graph().draw_mermaid()
 
     assert "scenario_agent" in mermaid_source
+
     assert "process_coach_agent" in mermaid_source
+
     assert "ap_plus_navigator_agent" in mermaid_source
+
     assert "fallback_response" in mermaid_source

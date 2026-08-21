@@ -11,13 +11,15 @@ def test_classify_route_selects_scenario() -> None:
     decision = classify_route("I want to define my company name and business problem.")
 
     assert decision.route == "scenario"
-    assert "scenario context" in decision.reason
+
+    assert "business-scenario" in decision.reason
 
 
 def test_classify_route_selects_process_coach() -> None:
     decision = classify_route("Why is procurement important in this business process?")
 
     assert decision.route == "process_coach"
+
     assert "business-process reasoning" in decision.reason
 
 
@@ -25,6 +27,7 @@ def test_classify_route_selects_ap_plus_navigator() -> None:
     decision = classify_route("Where can I find the purchase-order screen in AP+?")
 
     assert decision.route == "ap_plus_navigator"
+
     assert "AP+-specific" in decision.reason
 
 
@@ -32,7 +35,16 @@ def test_classify_route_uses_fallback() -> None:
     decision = classify_route("Hello there.")
 
     assert decision.route == "fallback"
-    assert "no specialized" in decision.reason.lower()
+
+    assert "no deterministic fallback routing rule" in decision.reason.lower()
+
+
+def test_classify_route_uses_fallback_for_blank_input() -> None:
+    decision = classify_route("   ")
+
+    assert decision.route == "fallback"
+
+    assert "no usable message content" in decision.reason.lower()
 
 
 def test_ap_plus_route_has_priority_over_process_route() -> None:
@@ -55,6 +67,12 @@ def test_classify_route_is_case_insensitive() -> None:
 
 def test_classify_route_normalizes_whitespace() -> None:
     decision = classify_route("Where   can   I   find   this   field   in   AP+?")
+
+    assert decision.route == "ap_plus_navigator"
+
+
+def test_classify_route_detects_natural_ap_plus_phrase() -> None:
+    decision = classify_route("Where should I enter the supplier?")
 
     assert decision.route == "ap_plus_navigator"
 

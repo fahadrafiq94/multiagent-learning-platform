@@ -54,8 +54,11 @@ class ScenarioAgent:
     def __init__(
         self,
         model_service: ModelService,
+        *,
+        model: str | None = None,
     ) -> None:
         self._model_service = model_service
+        self._model = model
 
     @property
     def name(self) -> AgentName:
@@ -96,6 +99,7 @@ class ScenarioAgent:
                     content=request.user_message,
                 ),
             ],
+            model=self._model,
         )
 
         try:

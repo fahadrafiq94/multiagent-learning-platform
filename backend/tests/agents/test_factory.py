@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import cast
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from app.agents.ap_plus_navigator import APPlusNavigatorAgent
 from app.agents.factory import create_agent_registry
@@ -82,3 +82,92 @@ def test_agent_registry_returns_distinct_agents() -> None:
     assert scenario is not process_coach
     assert scenario is not navigator
     assert process_coach is not navigator
+
+
+@patch("app.agents.factory.APPlusNavigatorAgent")
+@patch("app.agents.factory.ProcessCoachAgent")
+@patch("app.agents.factory.ScenarioAgent")
+def test_create_agent_registry_forwards_model_configuration(
+    mock_scenario_class: MagicMock,
+    mock_process_coach_class: MagicMock,
+    mock_ap_plus_class: MagicMock,
+) -> None:
+    model_service = create_model_service_mock()
+
+    scenario_agent = MagicMock()
+    scenario_agent.name = "scenario"
+
+    process_agent = MagicMock()
+    process_agent.name = "process_coach"
+
+    ap_plus_agent = MagicMock()
+    ap_plus_agent.name = "ap_plus_navigator"
+
+    mock_scenario_class.return_value = scenario_agent
+    mock_process_coach_class.return_value = process_agent
+    mock_ap_plus_class.return_value = ap_plus_agent
+
+    create_agent_registry(
+        model_service=model_service,
+        scenario_model="scenario-model",
+        process_coach_model="process-model",
+        ap_plus_navigator_model="ap-plus-model",
+    )
+
+    mock_scenario_class.assert_called_once_with(
+        model_service=model_service,
+        model="scenario-model",
+    )
+
+    mock_process_coach_class.assert_called_once_with(
+        model_service=model_service,
+        model="process-model",
+    )
+
+    mock_ap_plus_class.assert_called_once_with(
+        model_service=model_service,
+        model="ap-plus-model",
+    )
+
+
+@patch("app.agents.factory.APPlusNavigatorAgent")
+@patch("app.agents.factory.ProcessCoachAgent")
+@patch("app.agents.factory.ScenarioAgent")
+def test_create_agent_registry_defaults_models_to_none(
+    mock_scenario_class: MagicMock,
+    mock_process_coach_class: MagicMock,
+    mock_ap_plus_class: MagicMock,
+) -> None:
+    model_service = create_model_service_mock()
+
+    scenario_agent = MagicMock()
+    scenario_agent.name = "scenario"
+
+    process_agent = MagicMock()
+    process_agent.name = "process_coach"
+
+    ap_plus_agent = MagicMock()
+    ap_plus_agent.name = "ap_plus_navigator"
+
+    mock_scenario_class.return_value = scenario_agent
+    mock_process_coach_class.return_value = process_agent
+    mock_ap_plus_class.return_value = ap_plus_agent
+
+    create_agent_registry(
+        model_service=model_service,
+    )
+
+    mock_scenario_class.assert_called_once_with(
+        model_service=model_service,
+        model=None,
+    )
+
+    mock_process_coach_class.assert_called_once_with(
+        model_service=model_service,
+        model=None,
+    )
+
+    mock_ap_plus_class.assert_called_once_with(
+        model_service=model_service,
+        model=None,
+    )

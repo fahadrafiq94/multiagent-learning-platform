@@ -404,3 +404,59 @@ async def test_process_coach_preserves_model_error_as_cause() -> None:
         await agent.execute(create_request())
 
     assert exc_info.value.__cause__ is model_error
+
+
+@pytest.mark.asyncio
+async def test_process_coach_uses_configured_model() -> None:
+    model_service = create_model_service_mock()
+    generate_mock = get_generate_mock(model_service)
+
+    generate_mock.return_value = ModelChatResponse(
+        content="Why would the company need this step?",
+        model="process-model",
+        provider="ollama",
+        latency_ms=10.0,
+    )
+
+    agent = ProcessCoachAgent(
+        model_service=model_service,
+        model="process-model",
+    )
+
+    await agent.execute(create_request())
+
+    generated_request = (
+        generate_mock.await_args.args[0]  # type: ignore[union-attr]
+    )
+
+    assert isinstance(
+        generated_request,
+        ModelChatRequest,
+    )
+
+    assert generated_request.model == "process-model"
+
+
+@pytest.mark.asyncio
+async def test_process_coach_leaves_model_unset_by_default() -> None:
+    model_service = create_model_service_mock()
+    generate_mock = get_generate_mock(model_service)
+
+    generate_mock.return_value = ModelChatResponse(
+        content="What should happen next?",
+        model="default-model",
+        provider="ollama",
+        latency_ms=10.0,
+    )
+
+    agent = ProcessCoachAgent(
+        model_service=model_service,
+    )
+
+    await agent.execute(create_request())
+
+    generated_request = (
+        generate_mock.await_args.args[0]  # type: ignore[union-attr]
+    )
+
+    assert generated_request.model is None

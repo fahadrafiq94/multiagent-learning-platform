@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
@@ -8,12 +9,18 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.agents.factory import create_agent_registry
+from app.agents.orchestrator import OrchestratorAgent
+from app.agents.routing import RoutingTarget
 from app.api.routes import (
     orchestration as orchestration_routes,
 )
 from app.main import app
-from app.orchestration.graph import build_orchestration_graph
-from app.orchestration.service import OrchestrationService
+from app.orchestration.graph import (
+    build_orchestration_graph,
+)
+from app.orchestration.service import (
+    OrchestrationService,
+)
 from app.services.model_service import ModelService
 from app.services.model_service.exceptions import (
     ModelGenerationError,
@@ -24,6 +31,47 @@ from app.services.model_service.schemas import (
 )
 
 
+def _semantic_route_for_message(
+    user_message: str,
+) -> RoutingTarget:
+    """Simulate semantic routing at the ModelService boundary."""
+
+    normalized = " ".join(user_message.lower().split())
+
+    if (
+        "ap+" in normalized
+        or "where can i find" in normalized
+        or "where should i enter" in normalized
+    ):
+        return "ap_plus_navigator"
+
+    if (
+        "why" in normalized
+        or "procurement" in normalized
+        or "business process" in normalized
+        or "purchase order" in normalized
+    ):
+        return "process_coach"
+
+    if "company" in normalized or "scenario" in normalized or "business problem" in normalized:
+        return "scenario"
+
+    return "fallback"
+
+
+def _routing_reason(
+    route: RoutingTarget,
+) -> str:
+    reasons: dict[RoutingTarget, str] = {
+        "scenario": ("The student needs business-scenario clarification."),
+        "process_coach": ("The student needs business-process reasoning."),
+        "ap_plus_navigator": ("The student needs AP+ system guidance."),
+        "fallback": ("The student's immediate need cannot yet be determined."),
+    }
+
+    return reasons[route]
+
+
 def create_model_service(
     *,
     content: str = "Integrated API response.",
@@ -32,6 +80,8 @@ def create_model_service(
     AsyncMock,
     list[ModelChatRequest],
 ]:
+    """Create the ModelService test boundary for the full HTTP stack."""
+
     model_service = cast(
         ModelService,
         MagicMock(spec=ModelService),
@@ -44,8 +94,21 @@ def create_model_service(
     ) -> ModelChatResponse:
         requests.append(request)
 
+        if request.response_schema is not None:
+            route = _semantic_route_for_message(request.messages[-1].content)
+
+            response_content = json.dumps(
+                {
+                    "route": route,
+                    "reason": _routing_reason(route),
+                }
+            )
+
+        else:
+            response_content = content
+
         return ModelChatResponse(
-            content=content,
+            content=response_content,
             model="fake-model",
             provider="ollama",
             latency_ms=5.0,
@@ -53,7 +116,7 @@ def create_model_service(
 
     generate_mock = AsyncMock(side_effect=generate)
 
-    model_service.generate = generate_mock  # type: ignore[method-assign]
+    model_service.generate = generate_mock
 
     return (
         model_service,
@@ -65,17 +128,36 @@ def create_model_service(
 def build_service(
     model_service: ModelService,
 ) -> OrchestrationService:
+    """Build the real orchestration stack for API integration tests."""
+
     registry = create_agent_registry(
+        model_service=model_service,
+    )
+
+    orchestrator = OrchestratorAgent(
         model_service=model_service,
     )
 
     graph = build_orchestration_graph(
         agent_registry=registry,
+        orchestrator=orchestrator,
     )
 
     return OrchestrationService(
         graph=graph,
     )
+
+
+def _orchestrator_requests(
+    requests: list[ModelChatRequest],
+) -> list[ModelChatRequest]:
+    return [request for request in requests if request.response_schema is not None]
+
+
+def _agent_requests(
+    requests: list[ModelChatRequest],
+) -> list[ModelChatRequest]:
+    return [request for request in requests if request.response_schema is None]
 
 
 @pytest.fixture
@@ -140,11 +222,17 @@ def test_http_request_runs_complete_agent_stack(
 
     assert body["metadata"]["agent_called"] is True
 
+    assert body["metadata"]["routing_strategy"] == "llm_semantic_router_v1"
+
     assert body["final_response"] == "Scenario integration response."
 
-    generate_mock.assert_awaited_once()
+    assert generate_mock.await_count == 2
 
-    assert len(requests) == 1
+    assert len(requests) == 2
+
+    assert len(_orchestrator_requests(requests)) == 1
+
+    assert len(_agent_requests(requests)) == 1
 
 
 def test_http_process_request_uses_process_coach(
@@ -179,9 +267,9 @@ def test_http_process_request_uses_process_coach(
 
     assert body["metadata"]["agent_metadata"]["guidance_mode"] == "socratic"
 
-    generate_mock.assert_awaited_once()
+    assert generate_mock.await_count == 2
 
-    assert len(requests) == 1
+    assert len(_agent_requests(requests)) == 1
 
 
 def test_http_ap_plus_request_uses_navigator(
@@ -216,12 +304,12 @@ def test_http_ap_plus_request_uses_navigator(
 
     assert body["metadata"]["agent_metadata"]["guidance_mode"] == "system_navigation"
 
-    generate_mock.assert_awaited_once()
+    assert generate_mock.await_count == 2
 
-    assert len(requests) == 1
+    assert len(_agent_requests(requests)) == 1
 
 
-def test_http_fallback_does_not_invoke_model(
+def test_http_fallback_uses_only_orchestrator_model_call(
     integrated_client: tuple[
         TestClient,
         AsyncMock,
@@ -253,9 +341,17 @@ def test_http_fallback_does_not_invoke_model(
 
     assert body["metadata"]["selected_agent"] is None
 
-    generate_mock.assert_not_awaited()
+    assert body["metadata"]["keyword_fallback_used"] is True
 
-    assert requests == []
+    assert body["metadata"]["keyword_route"] == "fallback"
+
+    assert generate_mock.await_count == 1
+
+    assert len(requests) == 1
+
+    assert len(_orchestrator_requests(requests)) == 1
+
+    assert _agent_requests(requests) == []
 
 
 def test_http_model_failure_returns_controlled_response() -> None:
@@ -268,12 +364,12 @@ def test_http_model_failure_returns_controlled_response() -> None:
         side_effect=ModelGenerationError(
             "ollama",
             details={
-                "reason": "API integration failure",
+                "reason": ("API integration failure"),
             },
         )
     )
 
-    model_service.generate = generate_mock  # type: ignore[method-assign]
+    model_service.generate = generate_mock
 
     service = build_service(model_service)
 
@@ -292,13 +388,17 @@ def test_http_model_failure_returns_controlled_response() -> None:
     finally:
         app.dependency_overrides.clear()
 
-    # The graph executed correctly and converted the expected
-    # model failure into application state, so this remains 200.
+    assert generate_mock.await_count == 2
+
     assert response.status_code == 200
 
     body = response.json()
 
     assert body["route"] == "scenario"
+
+    assert body["metadata"]["keyword_fallback_trigger"] == "orchestrator_error"
+
+    assert body["metadata"]["semantic_routing_failed"] is True
 
     assert body["error"] == ("Scenario Agent could not generate a response.")
 
@@ -306,7 +406,11 @@ def test_http_model_failure_returns_controlled_response() -> None:
 
 
 def test_http_invalid_request_still_returns_422() -> None:
-    model_service, _, _ = create_model_service()
+    (
+        model_service,
+        generate_mock,
+        requests,
+    ) = create_model_service()
 
     service = build_service(model_service)
 
@@ -325,3 +429,7 @@ def test_http_invalid_request_still_returns_422() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 422
+
+    generate_mock.assert_not_awaited()
+
+    assert requests == []
