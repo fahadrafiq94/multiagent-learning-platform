@@ -3,40 +3,76 @@ services:
     build:
       context: ../..
       dockerfile: docker/backend/Dockerfile
-    container_name: fredi-backend-dev
+
     env_file:
       - ../../backend/.env
+
     environment:
       APP_ENV: development
+
+      # Inside Docker, localhost would refer to the backend
+      # container itself. Use the Ollama Compose service name.
       OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_CHAT_MODEL: qwen3:4b
-      OLLAMA_EMBEDDING_MODEL: nomic-embed-text-v2-moe
+
       MODEL_PROVIDER: ollama
+
+    command:
+      - uv
+      - run
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
+
     ports:
       - "8000:8000"
+
     depends_on:
       ollama:
-        condition: service_started
-    networks:
-      - fredi-network
+        condition: service_healthy
+
     volumes:
       - ../../backend/app:/app/app
       - ../../backend/tests:/app/tests
+      - ../../backend/scripts:/app/scripts
+      - ../../backend/docs:/app/docs
+
+    networks:
+      - fredi-network
+
     restart: unless-stopped
 
   ollama:
     image: ollama/ollama:latest
-    container_name: fredi-ollama-dev
+
     ports:
       - "11434:11434"
+
     volumes:
       - ollama-data:/root/.ollama
+
+    healthcheck:
+      test:
+        - CMD
+        - ollama
+        - list
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
     networks:
       - fredi-network
+
     restart: unless-stopped
+
 
 volumes:
   ollama-data:
+
 
 networks:
   fredi-network:
