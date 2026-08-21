@@ -364,7 +364,7 @@ def test_http_model_failure_returns_controlled_response() -> None:
         side_effect=ModelGenerationError(
             "ollama",
             details={
-                "reason": ("API integration failure"),
+                "reason": "integration failure",
             },
         )
     )
