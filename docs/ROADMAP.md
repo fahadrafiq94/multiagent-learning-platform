@@ -299,8 +299,8 @@ Prepare the platform for deployment on the local or university server.
 | ------- | -------- | ----------- |
 | v0.1.0  | Sprint 0 | ✅ Completed |
 | v0.2.0  | Sprint 1 | ✅ Completed |
-| v0.3.0  | Sprint 2 | ⏳ Planned   |
-| v0.4.0  | Sprint 3 | ⏳ Planned   |
+| v0.3.0  | Sprint 2 | ✅ Completed |
+| v0.4.0  | Sprint 3 | ✅ Completed |
 | v0.5.0  | Sprint 4 | ⏳ Planned   |
 | v0.6.0  | Sprint 5 | ⏳ Planned   |
 | v0.7.0  | Sprint 6 | ⏳ Planned   |

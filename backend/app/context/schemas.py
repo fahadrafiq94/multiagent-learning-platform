@@ -13,7 +13,7 @@ from pydantic import (
     model_validator,
 )
 
-from app.agents.policies import GuidanceLevel
+from app.domain.guidance import GuidanceLevel
 
 ShortText = Annotated[
     str,

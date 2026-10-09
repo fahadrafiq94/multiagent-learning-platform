@@ -8,13 +8,15 @@ import pytest
 from app.agents.exceptions import AgentExecutionError
 from app.agents.policies import (
     PROCESS_COACH_GUIDANCE,
-    GuidanceLevel,
 )
 from app.agents.process_coach import (
     PROCESS_COACH_SYSTEM_PROMPT,
     ProcessCoachAgent,
 )
 from app.agents.schemas import AgentRequest
+from app.domain.guidance import (
+    GuidanceLevel,
+)
 from app.services.model_service import ModelService
 from app.services.model_service.exceptions import (
     ModelGenerationError,

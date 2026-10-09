@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import cast
 from uuid import uuid4
 
 import pytest
@@ -84,12 +83,7 @@ async def create_user(
         student_id=student_id,
     )
 
-    created = await repositories.identities.create(identity)
-
-    return cast(
-        UserIdentity,
-        created,
-    )
+    return await repositories.identities.create(identity)
 
 
 @pytest.mark.asyncio

@@ -8,13 +8,15 @@ import pytest
 from app.agents.exceptions import AgentExecutionError
 from app.agents.policies import (
     SCENARIO_GUIDANCE,
-    GuidanceLevel,
 )
 from app.agents.scenario import (
     SCENARIO_AGENT_SYSTEM_PROMPT,
     ScenarioAgent,
 )
 from app.agents.schemas import AgentRequest
+from app.domain.guidance import (
+    GuidanceLevel,
+)
 from app.services.model_service import ModelService
 from app.services.model_service.exceptions import (
     ModelGenerationError,

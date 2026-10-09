@@ -5,10 +5,10 @@ from app.agents.orchestrator import (
     OrchestratorAgent,
     OrchestratorRoutingError,
 )
-from app.agents.policies import GuidanceLevel
 from app.agents.registry import AgentRegistry
 from app.agents.routing import OrchestratorRequest
 from app.agents.schemas import AgentName, AgentRequest
+from app.domain.guidance import GuidanceLevel
 from app.logging.logger import logger
 from app.orchestration.router import classify_route
 from app.orchestration.state import OrchestrationState

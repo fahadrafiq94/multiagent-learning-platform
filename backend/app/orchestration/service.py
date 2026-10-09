@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol, cast
 
-from app.agents.policies import GuidanceLevel
+from app.domain.guidance import GuidanceLevel
 from app.logging.logger import logger
 from app.orchestration.schemas import (
     OrchestrationRequest,

@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.agents.policies import GuidanceLevel
+from app.domain.guidance import GuidanceLevel
 
 AgentName = Literal[
     "scenario",

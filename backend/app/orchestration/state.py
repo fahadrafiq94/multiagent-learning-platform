@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, TypedDict
 
-from app.agents.policies import GuidanceLevel
+from app.domain.guidance import GuidanceLevel
 
 RouteName = Literal[
     "scenario",

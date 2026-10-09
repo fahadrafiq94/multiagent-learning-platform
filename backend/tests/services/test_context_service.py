@@ -4,9 +4,6 @@ from uuid import uuid4
 
 import pytest
 
-from app.agents.policies import (
-    GuidanceLevel,
-)
 from app.context import (
     ConversationRole,
     ConversationSession,
@@ -15,6 +12,7 @@ from app.context import (
     ScenarioSetupStatus,
     SessionContextUpdate,
 )
+from app.domain import GuidanceLevel
 from app.identity import UserIdentity
 from app.repositories import (
     InMemoryRepositories,

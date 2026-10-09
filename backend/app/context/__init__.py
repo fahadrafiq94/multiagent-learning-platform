@@ -1,3 +1,12 @@
+from app.context.agent_views import (
+    AgentContextView,
+    ContextTarget,
+    RuntimeSessionContext,
+    ScenarioSetupContext,
+)
+from app.context.policies import (
+    AgentContextPolicyService,
+)
 from app.context.schemas import (
     AdaptationSource,
     AgentContext,
@@ -60,4 +69,9 @@ __all__ = [
     "ScenarioRequiredField",
     "ScenarioSetupStatus",
     "SessionContextUpdate",
+    "AgentContextPolicyService",
+    "AgentContextView",
+    "ContextTarget",
+    "RuntimeSessionContext",
+    "ScenarioSetupContext",
 ]

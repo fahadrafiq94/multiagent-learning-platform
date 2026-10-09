@@ -5,8 +5,10 @@ from app.agents.policies import (
     GUIDANCE_LEVEL_ORDER,
     PROCESS_COACH_GUIDANCE,
     SCENARIO_GUIDANCE,
-    GuidanceLevel,
     next_guidance_level,
+)
+from app.domain.guidance import (
+    GuidanceLevel,
 )
 
 

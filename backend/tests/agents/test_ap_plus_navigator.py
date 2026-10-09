@@ -12,9 +12,11 @@ from app.agents.ap_plus_navigator import (
 from app.agents.exceptions import AgentExecutionError
 from app.agents.policies import (
     AP_PLUS_NAVIGATOR_GUIDANCE,
-    GuidanceLevel,
 )
 from app.agents.schemas import AgentRequest
+from app.domain.guidance import (
+    GuidanceLevel,
+)
 from app.services.model_service import ModelService
 from app.services.model_service.exceptions import (
     ModelGenerationError,

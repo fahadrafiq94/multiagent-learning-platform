@@ -910,7 +910,7 @@ class InMemoryConversationRepository:
             raise ValueError("offset must not be negative")
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True)
 class InMemoryRepositories:
     """
     Fully wired Sprint 4 in-memory repository collection.

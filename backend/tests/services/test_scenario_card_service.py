@@ -34,11 +34,11 @@ def create_services() -> tuple[
     repositories = create_in_memory_repositories()
 
     user_context_service = UserContextService(
-        repository=repositories.user_contexts,
+        repository=(repositories.user_contexts),
     )
 
     scenario_service = ScenarioCardService(
-        user_context_service=user_context_service,
+        user_context_service=(user_context_service),
     )
 
     return (
@@ -66,8 +66,8 @@ async def create_confirmed_scenario(
     scenario_service: ScenarioCardService,
 ) -> ScenarioCard:
     """
-    Create the initial persistent Scenario Card through the
-    reviewed ScenarioDraft confirmation path.
+    Create the initial persistent Scenario Card through
+    reviewed ScenarioDraft confirmation.
     """
 
     draft = ScenarioDraft(
@@ -271,7 +271,7 @@ async def test_confirming_second_initial_draft_returns_existing_card() -> None:
 
     first_card = await create_confirmed_scenario(
         user=user,
-        scenario_service=scenario_service,
+        scenario_service=(scenario_service),
     )
 
     second_draft = ScenarioDraft(
@@ -368,7 +368,7 @@ async def test_business_goal_can_be_added_after_onboarding() -> None:
 
     card = await scenario_service.add_business_goal(
         user_id=user.user_id,
-        goal="Improve material availability.",
+        goal=("Improve material availability."),
     )
 
     assert "Improve material availability." in card.business_goals
@@ -394,7 +394,7 @@ async def test_duplicate_business_goal_is_not_added_twice() -> None:
 
     first = await scenario_service.add_business_goal(
         user_id=user.user_id,
-        goal="Improve material availability.",
+        goal=("Improve material availability."),
     )
 
     second = await scenario_service.add_business_goal(
@@ -451,7 +451,7 @@ async def test_duplicate_constraint_is_not_added_twice() -> None:
 
     first = await scenario_service.add_constraint(
         user_id=user.user_id,
-        constraint="Limited assembly capacity.",
+        constraint=("Limited assembly capacity."),
     )
 
     second = await scenario_service.add_constraint(

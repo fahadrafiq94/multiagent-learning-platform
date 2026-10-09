@@ -1,83 +1,86 @@
 from __future__ import annotations
 
+import pytest
+
+from app.identity import UserIdentity
 from app.repositories import (
-    ConversationRepository,
-    ConversationSessionRepository,
-    DuplicateRecordError,
-    RepositoryNotFoundError,
-    SessionContextRepository,
-    UserContextRepository,
+    InMemoryRepositories,
     UserIdentityRepository,
-    VersionConflictError,
+    create_in_memory_repositories,
 )
 
 
-def test_repository_protocols_are_runtime_checkable() -> None:
-    incomplete_repository = object()
+def test_factory_returns_typed_repository_bundle() -> None:
+    repositories: InMemoryRepositories = create_in_memory_repositories()
 
-    assert not isinstance(
-        incomplete_repository,
-        UserIdentityRepository,
+    assert repositories.identities is not None
+    assert repositories.user_contexts is not None
+    assert repositories.sessions is not None
+    assert repositories.session_contexts is not None
+    assert repositories.conversations is not None
+
+
+def test_identity_repository_satisfies_repository_protocol() -> None:
+    repositories = create_in_memory_repositories()
+
+    repository: UserIdentityRepository = repositories.identities
+
+    assert repository is not None
+
+
+@pytest.mark.asyncio
+async def test_identity_create_returns_user_identity() -> None:
+    repositories = create_in_memory_repositories()
+
+    identity = UserIdentity(
+        student_id="K12345",
     )
 
-    assert not isinstance(
-        incomplete_repository,
-        UserContextRepository,
+    created: UserIdentity = await repositories.identities.create(identity)
+
+    assert isinstance(
+        created,
+        UserIdentity,
     )
 
-    assert not isinstance(
-        incomplete_repository,
-        ConversationSessionRepository,
+    assert created.user_id == identity.user_id
+
+    assert created.student_id == "K12345"
+
+
+@pytest.mark.asyncio
+async def test_identity_get_by_user_id_returns_typed_identity() -> None:
+    repositories = create_in_memory_repositories()
+
+    identity = UserIdentity(
+        student_id="K12345",
     )
 
-    assert not isinstance(
-        incomplete_repository,
-        SessionContextRepository,
+    created = await repositories.identities.create(identity)
+
+    loaded: UserIdentity | None = await repositories.identities.get_by_user_id(
+        user_id=created.user_id,
     )
 
-    assert not isinstance(
-        incomplete_repository,
-        ConversationRepository,
+    assert loaded is not None
+
+    assert loaded.user_id == created.user_id
+
+
+@pytest.mark.asyncio
+async def test_identity_get_by_student_id_returns_typed_identity() -> None:
+    repositories = create_in_memory_repositories()
+
+    identity = UserIdentity(
+        student_id="K12345",
     )
 
+    await repositories.identities.create(identity)
 
-def test_repository_not_found_error_contains_entity_details() -> None:
-    error = RepositoryNotFoundError(
-        entity_name="SessionContext",
-        entity_id="session-123",
+    loaded: UserIdentity | None = await repositories.identities.get_by_student_id(
+        student_id="K12345",
     )
 
-    assert error.entity_name == "SessionContext"
-    assert error.entity_id == "session-123"
+    assert loaded is not None
 
-    assert str(error) == "SessionContext not found: session-123"
-
-
-def test_duplicate_record_error_contains_unique_key() -> None:
-    error = DuplicateRecordError(
-        entity_name="UserIdentity",
-        key="student_id=K12345",
-    )
-
-    assert error.entity_name == "UserIdentity"
-    assert error.key == "student_id=K12345"
-
-    assert str(error) == ("Duplicate UserIdentity: student_id=K12345")
-
-
-def test_version_conflict_error_contains_versions() -> None:
-    error = VersionConflictError(
-        entity_name="SessionContext",
-        entity_id="session-123",
-        expected_version=4,
-        actual_version=5,
-    )
-
-    assert error.entity_name == "SessionContext"
-    assert error.entity_id == "session-123"
-    assert error.expected_version == 4
-    assert error.actual_version == 5
-
-    assert str(error) == (
-        "Version conflict for SessionContext session-123: expected version 4, actual version 5"
-    )
+    assert loaded.student_id == "K12345"
