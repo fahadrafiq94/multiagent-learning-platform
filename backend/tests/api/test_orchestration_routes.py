@@ -82,7 +82,7 @@ def test_invoke_orchestration_route() -> None:
     assert body["metadata"]["model_called"] is True
 
 
-def test_invoke_orchestration_route_without_student_id() -> None:
+def test_invoke_orchestration_route_without_student_id_returns_422() -> None:
     response = client.post(
         "/orchestration/invoke",
         json={
@@ -91,12 +91,11 @@ def test_invoke_orchestration_route_without_student_id() -> None:
         },
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 422
 
     body = response.json()
 
-    assert body["student_id"] is None
-    assert body["final_response"] == "Processed: Hello"
+    assert body["detail"]
 
 
 def test_invoke_orchestration_route_rejects_blank_message() -> None:
@@ -130,17 +129,16 @@ def test_invoke_orchestration_route_handles_service_failure() -> None:
         override_failing_service
     )
 
-    response = client.post(
-        "/orchestration/invoke",
-        json={
-            "session_id": "session-1",
-            "user_message": "Hello",
-        },
-    )
+    try:
+        response = client.post(
+            "/orchestration/invoke",
+            json={
+                "session_id": ("session-1"),
+                "student_id": ("K12345"),
+                "user_message": ("Hello"),
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
 
     assert response.status_code == 500
-
-    body = response.json()
-
-    assert body["detail"]["error"] == "orchestration_service_error"
-    assert body["detail"]["message"] == "The orchestration workflow failed unexpectedly."

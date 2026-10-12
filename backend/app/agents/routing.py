@@ -2,7 +2,17 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    field_validator,
+    model_validator,
+)
+
+from app.context.agent_views import (
+    AgentContextView,
+    ContextTarget,
+)
 
 RoutingTarget = Literal[
     "scenario",
@@ -16,8 +26,13 @@ class OrchestratorRequest(BaseModel):
     """Input required by the semantic routing agent."""
 
     session_id: str = Field(min_length=1)
+
     student_id: str | None = None
+
     user_message: str = Field(min_length=1)
+
+    context: AgentContextView | None = None
+
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator(
@@ -52,9 +67,18 @@ class OrchestratorRequest(BaseModel):
 
         return stripped
 
+    @model_validator(mode="after")
+    def context_must_be_orchestrator_view(
+        self,
+    ) -> OrchestratorRequest:
+        if self.context is not None and self.context.target is not ContextTarget.ORCHESTRATOR:
+            raise ValueError("OrchestratorRequest context must target ORCHESTRATOR.")
+
+        return self
+
 
 class RoutingDecision(BaseModel):
-    """Machine-readable routing decision produced by the orchestrator."""
+    """Machine-readable routing result."""
 
     route: RoutingTarget
 
@@ -78,7 +102,7 @@ class RoutingDecision(BaseModel):
 
 
 class OrchestratorResult(BaseModel):
-    """Validated semantic routing result plus observability metadata."""
+    """Validated routing result plus metadata."""
 
     decision: RoutingDecision
 

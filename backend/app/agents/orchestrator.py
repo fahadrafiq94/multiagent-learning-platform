@@ -4,13 +4,18 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from app.agents.context_prompt import (
+    context_view_to_prompt_text,
+)
 from app.agents.routing import (
     OrchestratorRequest,
     OrchestratorResult,
     RoutingDecision,
 )
 from app.logging.logger import logger
-from app.services.model_service import ModelService
+from app.services.model_service import (
+    ModelService,
+)
 from app.services.model_service.exceptions import (
     ModelServiceError,
 )
@@ -115,29 +120,33 @@ Output requirements:
 
 
 class OrchestratorRoutingError(Exception):
-    """Raised when semantic routing cannot produce a valid decision."""
-
     def __init__(
         self,
         message: str,
         *,
-        details: dict[str, Any] | None = None,
+        details: dict[
+            str,
+            Any,
+        ]
+        | None = None,
     ) -> None:
         super().__init__(message)
 
         self.message = message
         self.details = details or {}
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(
+        self,
+    ) -> dict[str, Any]:
         return {
-            "error": "orchestrator_routing_error",
+            "error": ("orchestrator_routing_error"),
             "message": self.message,
             "details": self.details,
         }
 
 
 class OrchestratorAgent:
-    """Semantic router for FREDi specialized agents."""
+    """Semantic routing agent."""
 
     def __init__(
         self,
@@ -152,85 +161,65 @@ class OrchestratorAgent:
         self,
         request: OrchestratorRequest,
     ) -> OrchestratorResult:
-        """Select the specialist best suited to the student's message."""
-
         logger.info(
             "Orchestrator_agent_started",
             session_id=request.session_id,
             student_id=request.student_id,
         )
 
-        routing_schema = RoutingDecision.model_json_schema()
+        system_prompt = ORCHESTRATOR_SYSTEM_PROMPT
+
+        context_text = context_view_to_prompt_text(request.context)
+
+        if context_text:
+            system_prompt = f"{system_prompt}\n\nFILTERED RUNTIME CONTEXT:\n{context_text}"
 
         model_request = ModelChatRequest(
             messages=[
                 ModelMessage(
                     role="system",
-                    content=ORCHESTRATOR_SYSTEM_PROMPT,
+                    content=system_prompt,
                 ),
                 ModelMessage(
                     role="user",
-                    content=request.user_message,
+                    content=(request.user_message),
                 ),
             ],
             model=self._model,
-            response_schema=routing_schema,
+            temperature=0.0,
+            response_schema=(RoutingDecision.model_json_schema()),
+            metadata={
+                "task": ("semantic_routing"),
+                "routing_policy": ("llm_semantic_router_v2"),
+            },
         )
 
         try:
             model_response = await self._model_service.generate(model_request)
-
         except ModelServiceError as exc:
-            logger.warning(
-                "Orchestrator_agent_model_error",
-                session_id=request.session_id,
-                student_id=request.student_id,
-                error=exc.message,
-            )
-
             raise OrchestratorRoutingError(
-                "Semantic routing model call failed.",
+                ("Semantic routing model call failed."),
                 details={
-                    "model_error": exc.to_dict(),
+                    "model_error": (exc.to_dict()),
                 },
             ) from exc
 
         try:
             decision = RoutingDecision.model_validate_json(model_response.content)
-
         except ValidationError as exc:
-            logger.warning(
-                "Orchestrator_agent_invalid_response",
-                session_id=request.session_id,
-                student_id=request.student_id,
-                response=model_response.content,
-            )
-
             raise OrchestratorRoutingError(
-                "Semantic router returned an invalid routing decision.",
+                ("Semantic router returned an invalid routing decision."),
                 details={
-                    "validation_error": str(exc),
+                    "validation_error": (str(exc)),
                 },
             ) from exc
 
-        result = OrchestratorResult(
+        return OrchestratorResult(
             decision=decision,
             metadata={
-                "model": model_response.model,
-                "model_provider": model_response.provider,
+                "model": (model_response.model),
+                "model_provider": (model_response.provider),
                 "model_latency_ms": (model_response.latency_ms),
-                "routing_strategy": ("llm_semantic_router_v1"),
+                "routing_strategy": ("llm_semantic_router_v2"),
             },
         )
-
-        logger.info(
-            "Orchestrator_agent_completed",
-            session_id=request.session_id,
-            student_id=request.student_id,
-            route=decision.route,
-            reason=decision.reason,
-            model=model_response.model,
-            provider=model_response.provider,
-        )
-
-        return result

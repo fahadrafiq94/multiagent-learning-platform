@@ -1,8 +1,21 @@
 from __future__ import annotations
 
-from typing import Any, Literal, TypedDict
+from typing import (
+    Any,
+    Literal,
+    TypedDict,
+)
+from uuid import UUID
 
-from app.domain.guidance import GuidanceLevel
+from app.context.schemas import (
+    AgentContext,
+)
+from app.domain.guidance import (
+    GuidanceLevel,
+)
+from app.services.scenario_onboarding_interaction_schemas import (
+    ScenarioOnboardingTurnResult,
+)
 
 RouteName = Literal[
     "scenario",
@@ -12,34 +25,56 @@ RouteName = Literal[
 ]
 
 
-class OrchestrationState(TypedDict, total=False):
-    """Shared state passed through the LangGraph workflow."""
+class OrchestrationState(
+    TypedDict,
+    total=False,
+):
+    """
+    Request-scoped LangGraph state.
 
-    # Request identity
+    No agent owns this state.
+    """
+
+    # External request identity
     session_id: str
-    student_id: str | None
+    student_id: str
+
+    # Internal identity
+    user_id: UUID
+    session_uuid: UUID
+
+    # Request trace
+    trace_id: UUID
 
     # Input
     user_message: str
+    current_message_id: UUID
+
+    # Context
+    base_context: AgentContext
+    onboarding_required: bool
+
+    # Onboarding
+    onboarding_result: ScenarioOnboardingTurnResult
 
     # Routing
     route: RouteName
     route_reason: str
 
-    # Guidance Level
+    # Guidance fallback
     guidance_level: GuidanceLevel
 
-    # Agent execution
+    # Agent output
     agent_response: str
 
-    # Retained temporarily for compatibility with earlier Sprint 2 code.
+    # Compatibility
     model_response: str
 
-    # Final output
+    # Final
     final_response: str
 
-    # Error handling
+    # Errors
     error: str | None
 
-    # Debug / observability metadata
+    # Request-scoped observability
     metadata: dict[str, Any]

@@ -2,9 +2,18 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    field_validator,
+)
 
-from app.domain.guidance import GuidanceLevel
+from app.context.agent_views import (
+    AgentContextView,
+)
+from app.domain.guidance import (
+    GuidanceLevel,
+)
 
 AgentName = Literal[
     "scenario",
@@ -14,13 +23,22 @@ AgentName = Literal[
 
 
 class AgentRequest(BaseModel):
-    """Common input contract for specialized FREDi agents."""
+    """
+    Common request contract for FREDi specialist agents.
+
+    context contains the already filtered, agent-specific runtime
+    context produced by AgentContextPolicyService.
+    """
 
     session_id: str = Field(min_length=1)
+
     student_id: str | None = None
+
     user_message: str = Field(min_length=1)
 
     guidance_level: GuidanceLevel = GuidanceLevel.MINIMAL
+
+    context: AgentContextView | None = None
 
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -33,12 +51,12 @@ class AgentRequest(BaseModel):
         cls,
         value: str,
     ) -> str:
-        stripped_value = value.strip()
+        stripped = value.strip()
 
-        if not stripped_value:
+        if not stripped:
             raise ValueError("Value must not be blank.")
 
-        return stripped_value
+        return stripped
 
     @field_validator("student_id")
     @classmethod
@@ -49,19 +67,21 @@ class AgentRequest(BaseModel):
         if value is None:
             return None
 
-        stripped_value = value.strip()
+        stripped = value.strip()
 
-        if not stripped_value:
+        if not stripped:
             raise ValueError("Student ID must not be blank.")
 
-        return stripped_value
+        return stripped
 
 
 class AgentResponse(BaseModel):
-    """Common output contract returned by a specialized agent."""
+    """Common specialist-agent output."""
 
     agent: AgentName
+
     content: str = Field(min_length=1)
+
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("content")
@@ -70,9 +90,9 @@ class AgentResponse(BaseModel):
         cls,
         value: str,
     ) -> str:
-        stripped_value = value.strip()
+        stripped = value.strip()
 
-        if not stripped_value:
+        if not stripped:
             raise ValueError("Agent response must not be blank.")
 
-        return stripped_value
+        return stripped

@@ -8,36 +8,14 @@ from app.orchestration.state import (
     RouteName,
 )
 
-GraphRouteTarget = Literal[
-    "scenario_agent",
-    "process_coach_agent",
-    "ap_plus_navigator_agent",
-    "fallback_response",
-]
 
-
-PrepareTarget = Literal[
-    "route_request",
-    "finalize_response",
-]
-
-
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RouteDecision:
-    """Deterministic fallback-routing decision.
-
-    The primary Sprint 3 routing strategy is the semantic OrchestratorAgent.
-
-    This decision type is used only by the deterministic keyword router when
-    semantic routing cannot confidently select a specialized agent or when
-    semantic routing fails.
-    """
-
     route: RouteName
     reason: str
 
 
-AP_PLUS_NAVIGATOR_KEYWORDS: tuple[str, ...] = (
+AP_PLUS_NAVIGATOR_KEYWORDS = (
     "ap+",
     "ap plus",
     "screen",
@@ -47,19 +25,14 @@ AP_PLUS_NAVIGATOR_KEYWORDS: tuple[str, ...] = (
     "click",
     "interface",
     "navigation",
-    "navigate",
     "where do i find",
     "where can i find",
-    "where should i enter",
-    "where do i enter",
-    "where should i put",
-    "where do i put",
     "error message",
     "error code",
 )
 
 
-SCENARIO_KEYWORDS: tuple[str, ...] = (
+SCENARIO_KEYWORDS = (
     "scenario",
     "company name",
     "company address",
@@ -68,27 +41,20 @@ SCENARIO_KEYWORDS: tuple[str, ...] = (
     "business case",
     "my company",
     "our company",
-    "student role",
     "my role",
-    "our role",
 )
 
 
-PROCESS_COACH_KEYWORDS: tuple[str, ...] = (
+PROCESS_COACH_KEYWORDS = (
     "business process",
     "process",
     "why",
     "what should happen next",
-    "what happens next",
     "next business step",
     "brainstorm",
     "understand",
     "reason",
-    "reasoning",
     "procurement",
-    "production",
-    "sales",
-    "logistics",
     "concept",
 )
 
@@ -96,125 +62,111 @@ PROCESS_COACH_KEYWORDS: tuple[str, ...] = (
 def classify_route(
     user_message: str,
 ) -> RouteDecision:
-    """Classify a message using deterministic keyword fallback rules.
+    """Deterministic fallback router."""
 
-    This router is intentionally simple, deterministic, and observable.
-
-    It is NOT the primary Sprint 3 routing mechanism.
-
-    The semantic OrchestratorAgent should run first. This function is used
-    only when:
-
-    1. the semantic orchestrator explicitly selects ``fallback``; or
-    2. semantic routing fails and deterministic recovery is required.
-
-    If no deterministic rule matches, ``fallback`` is returned and the graph
-    should ask the student to clarify what type of help they need.
-    """
-
-    normalized_message = _normalize_message(user_message)
-
-    if not normalized_message:
-        return RouteDecision(
-            route="fallback",
-            reason=("The deterministic fallback router received no usable message content."),
-        )
+    normalized = " ".join(user_message.casefold().split())
 
     if _contains_keyword(
-        normalized_message,
+        normalized,
         AP_PLUS_NAVIGATOR_KEYWORDS,
     ):
         return RouteDecision(
             route="ap_plus_navigator",
-            reason=(
-                "The deterministic fallback router detected "
-                "AP+-specific interface or navigation intent."
-            ),
+            reason=("The message requests AP+-specific system help."),
         )
 
     if _contains_keyword(
-        normalized_message,
+        normalized,
         SCENARIO_KEYWORDS,
     ):
         return RouteDecision(
             route="scenario",
-            reason=(
-                "The deterministic fallback router detected company or business-scenario context."
-            ),
+            reason=("The message concerns the business scenario."),
         )
 
     if _contains_keyword(
-        normalized_message,
+        normalized,
         PROCESS_COACH_KEYWORDS,
     ):
         return RouteDecision(
             route="process_coach",
-            reason=(
-                "The deterministic fallback router detected business-process reasoning intent."
-            ),
+            reason=("The message concerns business-process reasoning."),
         )
 
     return RouteDecision(
         route="fallback",
-        reason=("No deterministic fallback routing rule matched the message."),
+        reason=("No deterministic fallback route matched."),
     )
+
+
+InputPreparationTarget = Literal[
+    "load_context",
+    "finalize_response",
+]
+
+
+def route_after_input_preparation(
+    state: OrchestrationState,
+) -> InputPreparationTarget:
+    if state.get("error"):
+        return "finalize_response"
+
+    return "load_context"
+
+
+ContextLoadTarget = Literal[
+    "scenario_onboarding",
+    "route_request",
+    "finalize_response",
+]
+
+
+def route_after_context_load(
+    state: OrchestrationState,
+) -> ContextLoadTarget:
+    if state.get("error"):
+        return "finalize_response"
+
+    if state.get(
+        "onboarding_required",
+        False,
+    ):
+        return "scenario_onboarding"
+
+    return "route_request"
+
+
+GraphRouteTarget = Literal[
+    "scenario_agent",
+    "process_coach_agent",
+    "ap_plus_navigator_agent",
+    "fallback_response",
+]
 
 
 def route_to_graph_target(
     state: OrchestrationState,
 ) -> GraphRouteTarget:
-    """Map the selected routing target to its LangGraph node.
-
-    Semantic classification has already happened before this function runs.
-
-    This function performs only deterministic graph control-flow mapping.
-    """
-
     route = state.get(
         "route",
         "fallback",
     )
 
-    route_targets: dict[
+    mapping: dict[
         RouteName,
         GraphRouteTarget,
     ] = {
         "scenario": "scenario_agent",
-        "process_coach": "process_coach_agent",
+        "process_coach": ("process_coach_agent"),
         "ap_plus_navigator": ("ap_plus_navigator_agent"),
-        "fallback": "fallback_response",
+        "fallback": ("fallback_response"),
     }
 
-    return route_targets[route]
-
-
-def route_after_input_preparation(
-    state: OrchestrationState,
-) -> PrepareTarget:
-    """Determine whether routing should run after input preparation.
-
-    Invalid input skips semantic and deterministic routing and proceeds
-    directly to finalization where the existing error is returned.
-    """
-
-    if state.get("error"):
-        return "finalize_response"
-
-    return "route_request"
-
-
-def _normalize_message(
-    user_message: str,
-) -> str:
-    """Normalize user input for deterministic keyword matching."""
-
-    return " ".join(user_message.strip().lower().split())
+    return mapping[route]
 
 
 def _contains_keyword(
     normalized_message: str,
     keywords: tuple[str, ...],
 ) -> bool:
-    """Return whether any fallback-routing keyword is present."""
-
     return any(keyword in normalized_message for keyword in keywords)

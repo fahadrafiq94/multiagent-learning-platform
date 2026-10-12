@@ -350,7 +350,7 @@ async def test_orchestrator_returns_model_metadata() -> None:
 
     assert result.metadata["model_latency_ms"] == 42.5
 
-    assert result.metadata["routing_strategy"] == "llm_semantic_router_v1"
+    assert result.metadata["routing_strategy"] == "llm_semantic_router_v2"
 
 
 @pytest.mark.asyncio

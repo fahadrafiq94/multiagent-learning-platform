@@ -1,15 +1,28 @@
 from __future__ import annotations
 
-from app.agents.exceptions import AgentExecutionError
-from app.agents.policies import AP_PLUS_NAVIGATOR_GUIDANCE
+from app.agents.context_prompt import (
+    context_view_to_prompt_text,
+)
+from app.agents.exceptions import (
+    AgentExecutionError,
+)
+from app.agents.policies import (
+    AP_PLUS_NAVIGATOR_GUIDANCE,
+)
 from app.agents.schemas import (
     AgentName,
     AgentRequest,
     AgentResponse,
 )
-from app.logging.logger import logger
-from app.services.model_service import ModelService
-from app.services.model_service.exceptions import ModelServiceError
+from app.context.agent_views import (
+    ContextTarget,
+)
+from app.services.model_service import (
+    ModelService,
+)
+from app.services.model_service.exceptions import (
+    ModelServiceError,
+)
 from app.services.model_service.schemas import (
     ModelChatRequest,
     ModelMessage,
@@ -74,8 +87,6 @@ student responsible for understanding and solving the business exercise.
 
 
 class APPlusNavigatorAgent:
-    """Specialized agent for AP+-specific system guidance."""
-
     def __init__(
         self,
         model_service: ModelService,
@@ -87,31 +98,33 @@ class APPlusNavigatorAgent:
 
     @property
     def name(self) -> AgentName:
-        """Return the stable identifier of this agent."""
-
         return "ap_plus_navigator"
 
     async def execute(
         self,
         request: AgentRequest,
     ) -> AgentResponse:
-        """Execute the AP+ Navigator Agent for one student request."""
+        if (
+            request.context is not None
+            and request.context.target is not ContextTarget.AP_PLUS_NAVIGATOR
+        ):
+            raise ValueError("APPlusNavigatorAgent requires AP_PLUS_NAVIGATOR context.")
 
-        logger.info(
-            "AP_plus_navigator_agent_started",
-            session_id=request.session_id,
-            student_id=request.student_id,
-            guidance_level=request.guidance_level.value,
-        )
-
-        guidance_instruction = AP_PLUS_NAVIGATOR_GUIDANCE[request.guidance_level]
+        guidance = AP_PLUS_NAVIGATOR_GUIDANCE[request.guidance_level]
 
         system_prompt = (
-            f"{AP_PLUS_NAVIGATOR_SYSTEM_PROMPT}\n\n"
+            f"{AP_PLUS_NAVIGATOR_SYSTEM_PROMPT}"
+            "\n\n"
             "CURRENT GUIDANCE POLICY:\n"
-            f"Guidance level: {request.guidance_level.value}\n"
-            f"{guidance_instruction}"
+            f"Guidance level: "
+            f"{request.guidance_level.value}\n"
+            f"{guidance}"
         )
+
+        context_text = context_view_to_prompt_text(request.context)
+
+        if context_text:
+            system_prompt = f"{system_prompt}\n\nFILTERED RUNTIME CONTEXT:\n{context_text}"
 
         model_request = ModelChatRequest(
             messages=[
@@ -121,65 +134,39 @@ class APPlusNavigatorAgent:
                 ),
                 ModelMessage(
                     role="user",
-                    content=request.user_message,
+                    content=(request.user_message),
                 ),
             ],
             model=self._model,
         )
 
         try:
-            model_response = await self._model_service.generate(model_request)
+            response = await self._model_service.generate(model_request)
         except ModelServiceError as exc:
-            logger.warning(
-                "AP_plus_navigator_agent_model_error",
-                session_id=request.session_id,
-                student_id=request.student_id,
-                guidance_level=request.guidance_level.value,
-                error=exc.message,
-            )
-
             raise AgentExecutionError(
-                "AP+ Navigator Agent could not generate a response.",
+                ("AP+ Navigator Agent could not generate a response."),
                 agent=self.name,
                 details={
-                    "model_error": exc.to_dict(),
+                    "model_error": (exc.to_dict()),
                 },
             ) from exc
 
-        content = model_response.content.strip()
+        content = response.content.strip()
 
         if not content:
-            logger.warning(
-                "AP_plus_navigator_agent_empty_response",
-                session_id=request.session_id,
-                student_id=request.student_id,
-                guidance_level=request.guidance_level.value,
-            )
-
             raise AgentExecutionError(
-                "AP+ Navigator Agent returned an empty response.",
+                ("AP+ Navigator Agent returned an empty response."),
                 agent=self.name,
             )
 
-        response = AgentResponse(
+        return AgentResponse(
             agent=self.name,
             content=content,
             metadata={
-                "model": model_response.model,
-                "model_provider": model_response.provider,
-                "model_latency_ms": model_response.latency_ms,
-                "guidance_mode": "system_navigation",
-                "guidance_level": request.guidance_level.value,
+                "model": response.model,
+                "model_provider": (response.provider),
+                "model_latency_ms": (response.latency_ms),
+                "guidance_mode": ("system_navigation"),
+                "guidance_level": (request.guidance_level.value),
             },
         )
-
-        logger.info(
-            "AP_plus_navigator_agent_completed",
-            session_id=request.session_id,
-            student_id=request.student_id,
-            model=model_response.model,
-            provider=model_response.provider,
-            guidance_level=request.guidance_level.value,
-        )
-
-        return response
