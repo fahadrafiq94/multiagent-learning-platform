@@ -4,6 +4,12 @@ from app.context.agent_views import (
     RuntimeSessionContext,
     ScenarioSetupContext,
 )
+from app.context.budget import (
+    BudgetableMessage,
+    ContextBudgetPolicy,
+    ContextBudgetResult,
+    ContextBudgetService,
+)
 from app.context.policies import (
     AgentContextPolicyService,
 )
@@ -37,6 +43,9 @@ from app.context.schemas import (
     UserLearningProfile,
     UserProgress,
     UserSpecificAdaptation,
+)
+from app.context.token_estimator import (
+    ApproximateTokenEstimator,
 )
 
 __all__ = [
@@ -74,4 +83,9 @@ __all__ = [
     "ContextTarget",
     "RuntimeSessionContext",
     "ScenarioSetupContext",
+    "ApproximateTokenEstimator",
+    "BudgetableMessage",
+    "ContextBudgetPolicy",
+    "ContextBudgetResult",
+    "ContextBudgetService",
 ]

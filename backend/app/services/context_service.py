@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from uuid import UUID
 
 from app.context import (
@@ -9,6 +10,7 @@ from app.context import (
     ScenarioCard,
     SessionSummary,
 )
+from app.context.budget import ContextBudgetService
 from app.services.conversation_service import (
     ConversationService,
 )
@@ -20,6 +22,30 @@ from app.services.user_context_service import (
 )
 
 
+class ContextBudgetExceededError(ValueError):
+    """
+    Raised when the essential context alone exceeds the available input budget.
+
+    History cannot be removed to solve this situation because no history has yet
+    been included. The caller should reduce retrieved knowledge, adaptations,
+    summary size, system instructions, or increase the configured budget.
+    """
+
+    def __init__(
+        self,
+        *,
+        essential_tokens: int,
+        input_token_budget: int,
+    ) -> None:
+        self.essential_tokens = essential_tokens
+        self.input_token_budget = input_token_budget
+
+        super().__init__(
+            "Essential context exceeds the available input token budget: "
+            f"{essential_tokens} > {input_token_budget}."
+        )
+
+
 class ContextService:
     """
     Assemble the base request-scoped context for FREDi.
@@ -27,8 +53,8 @@ class ContextService:
     This service combines persistent user context, temporary session
     state, recent conversation history, and the current user message.
 
-    Agent-specific filtering, token budgeting, summarization, and
-    knowledge retrieval are intentionally handled elsewhere/later.
+    Token budgeting bounds recent history while preserving essential context.
+    Agent-specific filtering is handled by the context policy service.
     """
 
     def __init__(
@@ -37,10 +63,12 @@ class ContextService:
         user_context_service: UserContextService,
         session_context_service: SessionContextService,
         conversation_service: ConversationService,
+        budget_service: ContextBudgetService | None = None,
     ) -> None:
         self._user_context_service = user_context_service
         self._session_context_service = session_context_service
         self._conversation_service = conversation_service
+        self._budget_service = budget_service or ContextBudgetService()
 
     async def build(
         self,
@@ -50,7 +78,7 @@ class ContextService:
         current_message: str,
         trace_id: UUID | None = None,
         current_message_id: UUID | None = None,
-        recent_message_limit: int = 10,
+        recent_message_limit: int | None = None,
     ) -> AgentContext:
         """
         Build the common AgentContext for one request.
@@ -60,7 +88,7 @@ class ContextService:
         twice to the model.
         """
 
-        if recent_message_limit < 0:
+        if recent_message_limit is not None and recent_message_limit < 0:
             raise ValueError("recent_message_limit must not be negative")
 
         user_context = await self._user_context_service.get_or_create(
@@ -72,32 +100,21 @@ class ContextService:
             session_id=session_id,
         )
 
+        policy = self._budget_service.policy
+        if recent_message_limit is not None:
+            policy = replace(
+                policy,
+                max_recent_messages=min(recent_message_limit, policy.max_recent_messages),
+            )
+
         recent_messages = await self._load_recent_messages(
             user_id=user_id,
             session_id=session_id,
             current_message_id=(current_message_id),
-            limit=recent_message_limit,
+            limit=policy.max_recent_messages,
         )
 
-        included_sections = self._build_included_sections(
-            scenario_card=(user_context.scenario_card),
-            recent_messages=(recent_messages),
-            session_summary=(session_context.summary),
-            adaptation_count=len(user_context.adaptations),
-        )
-
-        metadata = ContextMetadata(
-            trace_id=trace_id,
-            included_sections=(included_sections),
-            recent_message_count=len(recent_messages),
-            summary_included=(session_context.summary is not None),
-            knowledge_chunk_count=0,
-            adaptation_count=len(user_context.adaptations),
-            estimated_input_tokens=0,
-            truncation_applied=False,
-        )
-
-        return AgentContext(
+        context = AgentContext(
             user_id=user_id,
             session_id=session_id,
             current_message=current_message,
@@ -106,12 +123,50 @@ class ContextService:
             progress=(user_context.progress),
             session_context=(session_context),
             recent_messages=(recent_messages),
-            session_summary=(session_context.summary),
+            session_summary=None,
             guidance_level=(user_context.hint_state.guidance_level),
             user_adaptations=list(user_context.adaptations),
             knowledge_chunks=[],
-            metadata=metadata,
         )
+
+        # Estimate structured essentials without duplicating history or metadata.
+        essential = context.model_dump_json(
+            exclude={"recent_messages", "metadata"},
+            exclude_none=True,
+        )
+        budget = self._budget_service.select_recent_messages(
+            messages=recent_messages,
+            essential_texts=[essential],
+            policy=policy,
+        )
+        if budget.estimated_essential_tokens > budget.input_token_budget:
+            raise ContextBudgetExceededError(
+                essential_tokens=budget.estimated_essential_tokens,
+                input_token_budget=budget.input_token_budget,
+            )
+
+        context.recent_messages = budget.selected_messages
+        context.metadata = ContextMetadata(
+            trace_id=trace_id,
+            included_sections=self._build_included_sections(
+                scenario_card=context.scenario_card,
+                recent_messages=context.recent_messages,
+                session_summary=context.session_summary,
+                adaptation_count=len(context.user_adaptations),
+            ),
+            recent_message_count=budget.selected_message_count,
+            summary_included=False,
+            knowledge_chunk_count=0,
+            adaptation_count=len(context.user_adaptations),
+            estimated_input_tokens=budget.estimated_input_tokens,
+            input_token_budget=budget.input_token_budget,
+            estimated_essential_tokens=budget.estimated_essential_tokens,
+            estimated_history_tokens=budget.estimated_history_tokens,
+            candidate_message_count=budget.candidate_message_count,
+            dropped_message_count=budget.dropped_message_count,
+            truncation_applied=budget.truncation_applied,
+        )
+        return context
 
     async def _load_recent_messages(
         self,

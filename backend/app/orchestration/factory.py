@@ -13,8 +13,16 @@ from app.agents.orchestrator import (
 from app.agents.scenario import (
     ScenarioAgent,
 )
+from app.config.settings import settings
+from app.context.budget import (
+    ContextBudgetPolicy,
+    ContextBudgetService,
+)
 from app.context.policies import (
     AgentContextPolicyService,
+)
+from app.context.token_estimator import (
+    ApproximateTokenEstimator,
 )
 from app.orchestration.graph import (
     build_orchestration_graph,
@@ -48,6 +56,9 @@ from app.services.scenario_onboarding_service import (
 from app.services.session_context_service import (
     SessionContextService,
 )
+from app.services.session_state_update_service import (
+    SessionStateUpdateService,
+)
 from app.services.user_context_service import (
     UserContextService,
 )
@@ -72,6 +83,8 @@ class OrchestrationRuntime:
 
     session_context_service: SessionContextService
 
+    session_state_update_service: SessionStateUpdateService
+
     scenario_card_service: ScenarioCardService
 
     scenario_onboarding_service: ScenarioOnboardingService
@@ -79,6 +92,8 @@ class OrchestrationRuntime:
     context_service: ContextService
 
     context_policy_service: AgentContextPolicyService
+
+    context_budget_service: ContextBudgetService
 
     orchestration_service: OrchestrationService
 
@@ -105,6 +120,9 @@ def build_orchestration_runtime(
     session_context_service = SessionContextService(
         repository=(runtime_repositories.session_contexts),
     )
+    session_state_update_service = SessionStateUpdateService(
+        session_context_service=(session_context_service),
+    )
 
     scenario_card_service = ScenarioCardService(
         user_context_service=(user_context_service),
@@ -115,10 +133,25 @@ def build_orchestration_runtime(
         scenario_card_service=(scenario_card_service),
     )
 
+    token_estimator = ApproximateTokenEstimator(
+        characters_per_token=(settings.context_characters_per_token),
+        message_overhead_tokens=(settings.context_message_overhead_tokens),
+    )
+
+    context_budget_service = ContextBudgetService(
+        estimator=token_estimator,
+        policy=ContextBudgetPolicy(
+            max_context_tokens=(settings.context_max_tokens),
+            reserved_output_tokens=(settings.context_reserved_output_tokens),
+            max_recent_messages=(settings.context_max_recent_messages),
+        ),
+    )
+
     context_service = ContextService(
-        user_context_service=(user_context_service),
-        session_context_service=(session_context_service),
-        conversation_service=(conversation_service),
+        user_context_service=user_context_service,
+        session_context_service=session_context_service,
+        conversation_service=conversation_service,
+        budget_service=context_budget_service,
     )
 
     context_policy_service = AgentContextPolicyService()
@@ -146,6 +179,7 @@ def build_orchestration_runtime(
         orchestrator=orchestrator,
         conversation_service=(conversation_service),
         context_service=(context_service),
+        session_state_update_service=(session_state_update_service),
         context_policy_service=(context_policy_service),
         onboarding_service=(scenario_onboarding_service),
         onboarding_interaction_service=(interaction_service),
@@ -162,9 +196,11 @@ def build_orchestration_runtime(
         conversation_service=(conversation_service),
         user_context_service=(user_context_service),
         session_context_service=(session_context_service),
+        session_state_update_service=(session_state_update_service),
         scenario_card_service=(scenario_card_service),
         scenario_onboarding_service=(scenario_onboarding_service),
         context_service=(context_service),
+        context_budget_service=(context_budget_service),
         context_policy_service=(context_policy_service),
         orchestration_service=(orchestration_service),
         graph=graph,

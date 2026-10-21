@@ -7,8 +7,14 @@ from typing import (
 )
 from uuid import UUID
 
+from app.agents.schemas import (
+    AgentName,
+)
 from app.context.schemas import (
     AgentContext,
+)
+from app.context.state_updates import (
+    SessionStateUpdateProposal,
 )
 from app.domain.guidance import (
     GuidanceLevel,
@@ -65,7 +71,12 @@ class OrchestrationState(
     guidance_level: GuidanceLevel
 
     # Agent output
+    selected_agent: AgentName
+
+    # Agent output
     agent_response: str
+
+    state_update_proposal: SessionStateUpdateProposal | None
 
     # Compatibility
     model_response: str

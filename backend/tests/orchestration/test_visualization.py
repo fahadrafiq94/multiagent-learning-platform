@@ -12,9 +12,7 @@ from app.orchestration.visualization import (
     MERMAID_STYLES,
     export_graph_mermaid,
 )
-from app.services.model_service import (
-    ModelService,
-)
+from app.services.model_service import ModelService
 
 
 class FakeDrawableGraph:
@@ -29,10 +27,10 @@ config:
 graph TD;
     __start__ --> prepare_input;
     prepare_input --> load_context;
-    load_context --> scenario_onboarding;
     load_context --> route_request;
     route_request --> process_coach_agent;
-    process_coach_agent --> finalize_response;
+    process_coach_agent --> apply_state_updates;
+    apply_state_updates --> finalize_response;
     finalize_response --> __end__;
 """
 
@@ -50,7 +48,7 @@ def create_real_graph():
         MagicMock(spec=ModelService),
     )
 
-    runtime = build_orchestration_runtime(model_service=(model_service))
+    runtime = build_orchestration_runtime(model_service=model_service)
 
     return runtime.graph
 
@@ -66,6 +64,7 @@ def test_export_graph_mermaid_creates_styled_file(
     )
 
     assert result == output_path
+
     assert output_path.exists()
 
     content = output_path.read_text(encoding="utf-8")
@@ -76,7 +75,9 @@ def test_export_graph_mermaid_creates_styled_file(
 
     assert "load_context" in content
 
-    assert "scenario_onboarding" in content
+    assert "apply_state_updates" in content
+
+    assert "finalize_response" in content
 
 
 def test_export_graph_mermaid_creates_parent_directories(
@@ -123,13 +124,14 @@ def test_mermaid_configuration_is_present() -> None:
     assert 'edgeLabelBackground: "#ffffff"' in MERMAID_FRONTMATTER
 
 
-def test_mermaid_styles_define_4b5_classes() -> None:
+def test_mermaid_styles_define_4b6_classes() -> None:
     expected = {
         "inputNode",
         "contextNode",
         "routingNode",
         "onboardingNode",
         "agentNode",
+        "stateNode",
         "fallbackNode",
         "outputNode",
         "terminalNode",
@@ -139,7 +141,7 @@ def test_mermaid_styles_define_4b5_classes() -> None:
         assert f"classDef {class_name}" in MERMAID_STYLES
 
 
-def test_mermaid_styles_reference_all_4b5_nodes() -> None:
+def test_mermaid_styles_reference_all_4b6_nodes() -> None:
     expected = {
         "prepare_input",
         "load_context",
@@ -148,6 +150,7 @@ def test_mermaid_styles_reference_all_4b5_nodes() -> None:
         "scenario_agent",
         "process_coach_agent",
         "ap_plus_navigator_agent",
+        "apply_state_updates",
         "fallback_response",
         "finalize_response",
     }
@@ -156,7 +159,11 @@ def test_mermaid_styles_reference_all_4b5_nodes() -> None:
         assert node in MERMAID_STYLES
 
 
-def test_real_graph_contains_all_4b5_nodes() -> None:
+def test_apply_state_updates_uses_state_style() -> None:
+    assert "class apply_state_updates stateNode;" in MERMAID_STYLES
+
+
+def test_real_graph_contains_all_4b6_nodes() -> None:
     graph = create_real_graph()
 
     mermaid = graph.get_graph().draw_mermaid()
@@ -169,6 +176,7 @@ def test_real_graph_contains_all_4b5_nodes() -> None:
         "scenario_agent",
         "process_coach_agent",
         "ap_plus_navigator_agent",
+        "apply_state_updates",
         "fallback_response",
         "finalize_response",
     }
@@ -186,7 +194,7 @@ def test_real_graph_contains_start_and_end() -> None:
     assert "__end__" in mermaid
 
 
-def test_real_graph_does_not_contain_old_sprint_nodes() -> None:
+def test_real_graph_does_not_contain_obsolete_nodes() -> None:
     graph = create_real_graph()
 
     mermaid = graph.get_graph().draw_mermaid()

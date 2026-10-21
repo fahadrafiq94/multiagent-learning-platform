@@ -39,6 +39,17 @@ class Settings(BaseSettings):
     model_temperature: float = 0.2
     model_max_tokens: int | None = None
 
+    # Context budgeting
+    context_max_tokens: int = 8192
+
+    context_reserved_output_tokens: int = 2048
+
+    context_max_recent_messages: int = 20
+
+    context_characters_per_token: float = 4.0
+
+    context_message_overhead_tokens: int = 4
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

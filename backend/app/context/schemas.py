@@ -666,6 +666,31 @@ class ContextMetadata(ContextModel):
         ge=0,
     )
 
+    input_token_budget: int | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    estimated_essential_tokens: int | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    estimated_history_tokens: int | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    candidate_message_count: int = Field(
+        default=0,
+        ge=0,
+    )
+
+    dropped_message_count: int = Field(
+        default=0,
+        ge=0,
+    )
+
     truncation_applied: bool = False
 
 

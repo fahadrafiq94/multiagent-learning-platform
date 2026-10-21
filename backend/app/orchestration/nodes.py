@@ -55,6 +55,9 @@ from app.services.scenario_onboarding_interaction_service import (
 from app.services.scenario_onboarding_service import (
     ScenarioOnboardingService,
 )
+from app.services.session_state_update_service import (
+    SessionStateUpdateService,
+)
 
 
 def prepare_input_node(
@@ -418,7 +421,9 @@ async def execute_agent_node(
 
     return {
         **state,
+        "selected_agent": (response.agent),
         "agent_response": (response.content),
+        "state_update_proposal": (response.state_update_proposal),
         "metadata": {
             **metadata,
             "selected_agent": (response.agent),
@@ -426,6 +431,9 @@ async def execute_agent_node(
             "agent_metadata": (dict(response.metadata)),
             "context_target": (view.target.value),
             "context_policy_version": (view.policy_version),
+            "state_update_proposed": (
+                bool(response.state_update_proposal and response.state_update_proposal.operations)
+            ),
         },
     }
 
@@ -505,6 +513,75 @@ async def finalize_response_node(
         "metadata": {
             **metadata,
             "finalized": True,
+        },
+    }
+
+
+async def apply_state_updates_node(
+    state: OrchestrationState,
+    *,
+    session_state_update_service: (SessionStateUpdateService),
+) -> OrchestrationState:
+    """
+    Validate and persist specialist-proposed runtime state.
+
+    State update failure must not discard an otherwise valid
+    specialist response.
+    """
+
+    if state.get("error"):
+        return state
+
+    user_id = state.get("user_id")
+
+    session_id = state.get("session_uuid")
+
+    agent_name = state.get("selected_agent")
+
+    if user_id is None or session_id is None or agent_name is None:
+        return state
+
+    metadata = dict(
+        state.get(
+            "metadata",
+            {},
+        )
+    )
+
+    try:
+        result = await session_state_update_service.apply(
+            user_id=user_id,
+            session_id=session_id,
+            agent_name=agent_name,
+            proposal=(state.get("state_update_proposal")),
+        )
+
+    except Exception as exc:
+        return {
+            **state,
+            "metadata": {
+                **metadata,
+                "state_update_applied": (False),
+                "state_update_error": (str(exc)),
+            },
+        }
+
+    return {
+        **state,
+        "metadata": {
+            **metadata,
+            "state_update_applied": (result.applied),
+            "state_update_accepted_count": (len(result.accepted_operations)),
+            "state_update_rejected_count": (len(result.rejected_operations)),
+            "session_context_version": (result.session_context_version),
+            "state_update_rejections": [
+                {
+                    "field": (item.operation.field.value),
+                    "action": (item.operation.action.value),
+                    "reason": item.reason,
+                }
+                for item in result.rejected_operations
+            ],
         },
     }
 

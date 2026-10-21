@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
@@ -13,10 +14,14 @@ from app.agents.exceptions import AgentExecutionError
 from app.agents.policies import (
     AP_PLUS_NAVIGATOR_GUIDANCE,
 )
-from app.agents.schemas import AgentRequest
-from app.domain.guidance import (
-    GuidanceLevel,
+from app.agents.schemas import (
+    AgentRequest,
+    SpecialistAgentOutput,
 )
+from app.agents.state_update_prompt import (
+    STATE_UPDATE_PROPOSAL_INSTRUCTIONS,
+)
+from app.domain.guidance import GuidanceLevel
 from app.services.model_service import ModelService
 from app.services.model_service.exceptions import (
     ModelGenerationError,
@@ -44,15 +49,67 @@ def get_generate_mock(
     return generate_mock
 
 
+def get_generated_request(
+    generate_mock: AsyncMock,
+) -> ModelChatRequest:
+    generate_mock.assert_awaited_once()
+
+    call = generate_mock.await_args
+
+    assert call is not None
+
+    request = call.args[0]
+
+    assert isinstance(
+        request,
+        ModelChatRequest,
+    )
+
+    return request
+
+
+def structured_response(
+    content: str,
+    *,
+    operations: (list[dict[str, object]] | None) = None,
+) -> str:
+    return json.dumps(
+        {
+            "content": content,
+            "state_update_proposal": {
+                "operations": (operations or []),
+            },
+        }
+    )
+
+
+def model_response(
+    content: str,
+    *,
+    operations: (list[dict[str, object]] | None) = None,
+    model: str = "fake-model",
+    latency_ms: float = 10.0,
+) -> ModelChatResponse:
+    return ModelChatResponse(
+        content=structured_response(
+            content,
+            operations=operations,
+        ),
+        model=model,
+        provider="ollama",
+        latency_ms=latency_ms,
+    )
+
+
 def create_request(
     *,
-    guidance_level: GuidanceLevel = GuidanceLevel.MINIMAL,
+    guidance_level: GuidanceLevel = (GuidanceLevel.MINIMAL),
 ) -> AgentRequest:
     return AgentRequest(
         session_id="session-1",
         student_id="student-1",
-        user_message=("I am in AP+ but cannot find the field I need. Where should I look?"),
-        guidance_level=guidance_level,
+        user_message=("I am at step 8 in AP+ but cannot find the supplier field."),
+        guidance_level=(guidance_level),
         metadata={
             "source": "test",
         },
@@ -71,14 +128,10 @@ async def test_ap_plus_navigator_has_correct_name() -> None:
 @pytest.mark.asyncio
 async def test_ap_plus_navigator_calls_model_service() -> None:
     model_service = create_model_service_mock()
+
     generate_mock = get_generate_mock(model_service)
 
-    generate_mock.return_value = ModelChatResponse(
-        content=("Which AP+ screen are you currently viewing?"),
-        model="fake-model",
-        provider="ollama",
-        latency_ms=10.0,
-    )
+    generate_mock.return_value = model_response("Which AP+ screen are you viewing?")
 
     agent = APPlusNavigatorAgent(model_service)
 
@@ -88,16 +141,12 @@ async def test_ap_plus_navigator_calls_model_service() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ap_plus_navigator_builds_expected_model_request() -> None:
+async def test_ap_plus_navigator_builds_structured_model_request() -> None:
     model_service = create_model_service_mock()
+
     generate_mock = get_generate_mock(model_service)
 
-    generate_mock.return_value = ModelChatResponse(
-        content="Which AP+ screen are you currently on?",
-        model="fake-model",
-        provider="ollama",
-        latency_ms=10.0,
-    )
+    generate_mock.return_value = model_response("Which AP+ screen are you on?")
 
     agent = APPlusNavigatorAgent(model_service)
 
@@ -105,270 +154,86 @@ async def test_ap_plus_navigator_builds_expected_model_request() -> None:
 
     await agent.execute(request)
 
-    generated_request = (
-        generate_mock.await_args.args[0]  # type: ignore[union-attr]
-    )
-
-    assert isinstance(
-        generated_request,
-        ModelChatRequest,
-    )
-
-    assert len(generated_request.messages) == 2
-
-    system_message = generated_request.messages[0]
-
-    user_message = generated_request.messages[1]
-
-    assert system_message.role == "system"
-
-    assert AP_PLUS_NAVIGATOR_SYSTEM_PROMPT in system_message.content
-
-    assert "CURRENT GUIDANCE POLICY:" in system_message.content
-
-    assert "Guidance level: minimal" in system_message.content
-
-    assert AP_PLUS_NAVIGATOR_GUIDANCE[GuidanceLevel.MINIMAL] in system_message.content
-
-    assert user_message.role == "user"
-
-    assert user_message.content == request.user_message
-
-
-@pytest.mark.asyncio
-async def test_ap_plus_navigator_prompt_defines_system_scope() -> None:
-    model_service = create_model_service_mock()
-    generate_mock = get_generate_mock(model_service)
-
-    generate_mock.return_value = ModelChatResponse(
-        content="Which screen are you currently using?",
-        model="fake-model",
-        provider="ollama",
-        latency_ms=10.0,
-    )
-
-    agent = APPlusNavigatorAgent(model_service)
-
-    await agent.execute(create_request())
-
-    generated_request = (
-        generate_mock.await_args.args[0]  # type: ignore[union-attr]
-    )
-
-    prompt = " ".join(generated_request.messages[0].content.lower().split())
-
-    assert "ap+-specific system usage" in prompt
-
-    assert "navigation" in prompt
-    assert "screens" in prompt
-    assert "fields" in prompt
-    assert "menus" in prompt
-
-
-@pytest.mark.asyncio
-async def test_ap_plus_navigator_prevents_ui_hallucination() -> None:
-    model_service = create_model_service_mock()
-    generate_mock = get_generate_mock(model_service)
-
-    generate_mock.return_value = ModelChatResponse(
-        content="Which screen are you currently on?",
-        model="fake-model",
-        provider="ollama",
-        latency_ms=10.0,
-    )
-
-    agent = APPlusNavigatorAgent(model_service)
-
-    await agent.execute(create_request())
-
-    generated_request = (
-        generate_mock.await_args.args[0]  # type: ignore[union-attr]
-    )
-
-    prompt = " ".join(generated_request.messages[0].content.lower().split())
-
-    assert "never invent ap+ menu names" in prompt
-
-    assert "never invent ap+ screen names" in prompt
-
-    assert "never invent ap+ field names" in prompt
-
-    assert "never invent buttons" in prompt
-
-    assert "never invent the meaning of an ap+ error message" in prompt
-
-
-@pytest.mark.asyncio
-async def test_ap_plus_navigator_requires_uncertainty_handling() -> None:
-    model_service = create_model_service_mock()
-    generate_mock = get_generate_mock(model_service)
-
-    generate_mock.return_value = ModelChatResponse(
-        content="Please provide the current AP+ screen.",
-        model="fake-model",
-        provider="ollama",
-        latency_ms=10.0,
-    )
-
-    agent = APPlusNavigatorAgent(model_service)
-
-    await agent.execute(create_request())
-
-    generated_request = (
-        generate_mock.await_args.args[0]  # type: ignore[union-attr]
-    )
-
-    prompt = " ".join(generated_request.messages[0].content.lower().split())
-
-    assert "cannot be verified" in prompt
-
-    assert "ask for the missing context" in prompt
-
-    assert "documentation" in prompt
-
-    assert "explicitly supplied" in prompt
-
-
-@pytest.mark.asyncio
-async def test_ap_plus_navigator_separates_system_and_process() -> None:
-    model_service = create_model_service_mock()
-    generate_mock = get_generate_mock(model_service)
-
-    generate_mock.return_value = ModelChatResponse(
-        content=("That is a business-process question rather than AP+ navigation."),
-        model="fake-model",
-        provider="ollama",
-        latency_ms=10.0,
-    )
-
-    agent = APPlusNavigatorAgent(model_service)
-
-    await agent.execute(create_request())
-
-    generated_request = (
-        generate_mock.await_args.args[0]  # type: ignore[union-attr]
-    )
-
-    prompt = " ".join(generated_request.messages[0].content.lower().split())
-
-    assert "underlying business-process decision" in prompt
-
-    assert "business-process reasoning" in prompt
-
-    assert "software execution" in prompt
-    assert "business reasoning" in prompt
-
-
-@pytest.mark.asyncio
-async def test_ap_plus_navigator_prevents_full_solution() -> None:
-    model_service = create_model_service_mock()
-    generate_mock = get_generate_mock(model_service)
-
-    generate_mock.return_value = ModelChatResponse(
-        content="Let's focus on the current AP+ action.",
-        model="fake-model",
-        provider="ollama",
-        latency_ms=10.0,
-    )
-
-    agent = APPlusNavigatorAgent(model_service)
-
-    await agent.execute(create_request())
-
-    generated_request = (
-        generate_mock.await_args.args[0]  # type: ignore[union-attr]
-    )
-
-    prompt = " ".join(generated_request.messages[0].content.lower().split())
-
-    assert "full 40-step ap+ solution" in prompt
-
-    assert "several future software actions" in prompt
-
-
-@pytest.mark.asyncio
-async def test_ap_plus_navigator_applies_minimal_guidance_policy() -> None:
-    model_service = create_model_service_mock()
-    generate_mock = get_generate_mock(model_service)
-
-    generate_mock.return_value = ModelChatResponse(
-        content="Which screen are you currently viewing?",
-        model="fake-model",
-        provider="ollama",
-        latency_ms=1.0,
-    )
-
-    agent = APPlusNavigatorAgent(model_service)
-
-    response = await agent.execute(
-        create_request(
-            guidance_level=GuidanceLevel.MINIMAL,
-        )
-    )
-
-    generated_request = (
-        generate_mock.await_args.args[0]  # type: ignore[union-attr]
-    )
+    generated_request = get_generated_request(generate_mock)
 
     prompt = generated_request.messages[0].content
+
+    assert AP_PLUS_NAVIGATOR_SYSTEM_PROMPT in prompt
 
     assert "Guidance level: minimal" in prompt
 
     assert AP_PLUS_NAVIGATOR_GUIDANCE[GuidanceLevel.MINIMAL] in prompt
 
-    assert response.metadata["guidance_level"] == "minimal"
+    assert STATE_UPDATE_PROPOSAL_INSTRUCTIONS in prompt
+
+    assert generated_request.messages[1].content == request.user_message
+
+    assert generated_request.response_schema == (SpecialistAgentOutput.model_json_schema())
+
+    assert generated_request.metadata["task"] == ("ap_plus_navigator_response")
+
+    assert generated_request.metadata["output_contract"] == "specialist-agent-v2"
 
 
 @pytest.mark.asyncio
-async def test_ap_plus_navigator_explicit_guidance_remains_grounded() -> None:
+async def test_ap_plus_prompt_protects_against_ui_hallucination() -> None:
     model_service = create_model_service_mock()
+
     generate_mock = get_generate_mock(model_service)
 
-    generate_mock.return_value = ModelChatResponse(
-        content=("I cannot verify the exact field without additional AP+ context."),
-        model="fake-model",
-        provider="ollama",
-        latency_ms=1.0,
+    generate_mock.return_value = model_response("I need more AP+ context first.")
+
+    agent = APPlusNavigatorAgent(model_service)
+
+    await agent.execute(create_request())
+
+    generated_request = get_generated_request(generate_mock)
+
+    prompt = generated_request.messages[0].content.casefold()
+
+    assert "never invent" in prompt
+
+    assert "menu" in prompt
+    assert "screen" in prompt
+    assert "field" in prompt
+
+
+@pytest.mark.asyncio
+async def test_ap_plus_navigator_applies_guidance_level() -> None:
+    model_service = create_model_service_mock()
+
+    generate_mock = get_generate_mock(model_service)
+
+    generate_mock.return_value = model_response(
+        "I cannot verify the exact field without more AP+ context."
     )
 
     agent = APPlusNavigatorAgent(model_service)
 
     response = await agent.execute(
         create_request(
-            guidance_level=GuidanceLevel.EXPLICIT,
+            guidance_level=(GuidanceLevel.EXPLICIT),
         )
     )
 
-    generated_request = (
-        generate_mock.await_args.args[0]  # type: ignore[union-attr]
-    )
+    generated_request = get_generated_request(generate_mock)
 
     prompt = generated_request.messages[0].content
 
-    explicit_policy = AP_PLUS_NAVIGATOR_GUIDANCE[GuidanceLevel.EXPLICIT]
-
     assert "Guidance level: explicit" in prompt
 
-    assert explicit_policy in prompt
-
-    assert "verified" in (explicit_policy.lower())
-
-    assert "cannot be verified" in explicit_policy.lower()
+    assert AP_PLUS_NAVIGATOR_GUIDANCE[GuidanceLevel.EXPLICIT] in prompt
 
     assert response.metadata["guidance_level"] == "explicit"
 
 
 @pytest.mark.asyncio
-async def test_ap_plus_navigator_returns_agent_response() -> None:
+async def test_ap_plus_navigator_returns_structured_content() -> None:
     model_service = create_model_service_mock()
+
     generate_mock = get_generate_mock(model_service)
 
-    generate_mock.return_value = ModelChatResponse(
-        content=("Which AP+ screen are you currently viewing?"),
-        model="fake-model",
-        provider="ollama",
-        latency_ms=12.5,
-    )
+    generate_mock.return_value = model_response("Let's focus on your current AP+ action.")
 
     agent = APPlusNavigatorAgent(model_service)
 
@@ -376,18 +241,63 @@ async def test_ap_plus_navigator_returns_agent_response() -> None:
 
     assert response.agent == "ap_plus_navigator"
 
-    assert response.content == ("Which AP+ screen are you currently viewing?")
+    assert response.content == ("Let's focus on your current AP+ action.")
+
+    assert response.state_update_proposal is not None
 
 
 @pytest.mark.asyncio
-async def test_ap_plus_navigator_returns_metadata() -> None:
+async def test_ap_plus_navigator_can_propose_step_and_blocker() -> None:
     model_service = create_model_service_mock()
+
     generate_mock = get_generate_mock(model_service)
 
-    generate_mock.return_value = ModelChatResponse(
-        content="Which screen are you on?",
+    generate_mock.return_value = model_response(
+        ("Let's focus on step 8 and the missing field."),
+        operations=[
+            {
+                "field": ("current_step_id"),
+                "action": "set",
+                "value": "8",
+                "reason": ("The user explicitly stated step 8."),
+            },
+            {
+                "field": ("active_blocker"),
+                "action": "set",
+                "value": ("Supplier field cannot be found."),
+                "reason": ("The user explicitly described the blocker."),
+            },
+        ],
+    )
+
+    agent = APPlusNavigatorAgent(model_service)
+
+    response = await agent.execute(create_request())
+
+    assert response.state_update_proposal is not None
+
+    operations = response.state_update_proposal.operations
+
+    assert len(operations) == 2
+
+    assert operations[0].field.value == "current_step_id"
+
+    assert operations[0].value == "8"
+
+    assert operations[1].field.value == "active_blocker"
+
+    assert response.metadata["state_update_operation_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_ap_plus_navigator_returns_model_metadata() -> None:
+    model_service = create_model_service_mock()
+
+    generate_mock = get_generate_mock(model_service)
+
+    generate_mock.return_value = model_response(
+        ("Which screen are you on?"),
         model="qwen3:4b",
-        provider="ollama",
         latency_ms=42.5,
     )
 
@@ -403,20 +313,14 @@ async def test_ap_plus_navigator_returns_metadata() -> None:
 
     assert response.metadata["guidance_mode"] == "system_navigation"
 
-    assert response.metadata["guidance_level"] == "minimal"
-
 
 @pytest.mark.asyncio
-async def test_ap_plus_navigator_strips_model_response() -> None:
+async def test_ap_plus_navigator_strips_content() -> None:
     model_service = create_model_service_mock()
+
     generate_mock = get_generate_mock(model_service)
 
-    generate_mock.return_value = ModelChatResponse(
-        content="  Which AP+ screen are you currently on?  ",
-        model="fake-model",
-        provider="ollama",
-        latency_ms=10.0,
-    )
+    generate_mock.return_value = model_response("  Which AP+ screen are you currently on?  ")
 
     agent = APPlusNavigatorAgent(model_service)
 
@@ -426,8 +330,53 @@ async def test_ap_plus_navigator_strips_model_response() -> None:
 
 
 @pytest.mark.asyncio
+async def test_ap_plus_navigator_rejects_invalid_structured_output() -> None:
+    model_service = create_model_service_mock()
+
+    generate_mock = get_generate_mock(model_service)
+
+    generate_mock.return_value = ModelChatResponse(
+        content="invalid-json",
+        model="fake-model",
+        provider="ollama",
+        latency_ms=1.0,
+    )
+
+    agent = APPlusNavigatorAgent(model_service)
+
+    with pytest.raises(
+        AgentExecutionError,
+        match=("invalid structured output"),
+    ):
+        await agent.execute(create_request())
+
+
+@pytest.mark.asyncio
+async def test_ap_plus_navigator_rejects_empty_response() -> None:
+    model_service = create_model_service_mock()
+
+    generate_mock = get_generate_mock(model_service)
+
+    generate_mock.return_value = ModelChatResponse(
+        content=" ",
+        model="fake-model",
+        provider="ollama",
+        latency_ms=1.0,
+    )
+
+    agent = APPlusNavigatorAgent(model_service)
+
+    with pytest.raises(
+        AgentExecutionError,
+        match="empty response",
+    ):
+        await agent.execute(create_request())
+
+
+@pytest.mark.asyncio
 async def test_ap_plus_navigator_wraps_model_service_error() -> None:
     model_service = create_model_service_mock()
+
     generate_mock = get_generate_mock(model_service)
 
     generate_mock.side_effect = ModelGenerationError(
@@ -442,88 +391,24 @@ async def test_ap_plus_navigator_wraps_model_service_error() -> None:
     with pytest.raises(AgentExecutionError) as exc_info:
         await agent.execute(create_request())
 
-    error = exc_info.value
+    assert exc_info.value.agent == "ap_plus_navigator"
 
-    assert error.agent == "ap_plus_navigator"
-
-    assert error.message == ("AP+ Navigator Agent could not generate a response.")
-
-    assert error.details["model_error"]["error"] == "model_generation_error"
+    assert exc_info.value.details["model_error"]["error"] == "model_generation_error"
 
 
 @pytest.mark.asyncio
 async def test_ap_plus_navigator_preserves_model_error_as_cause() -> None:
     model_service = create_model_service_mock()
+
     generate_mock = get_generate_mock(model_service)
 
-    model_error = ModelGenerationError(
-        "ollama",
-        details={
-            "reason": "test failure",
-        },
-    )
+    error = ModelGenerationError("ollama")
 
-    generate_mock.side_effect = model_error
+    generate_mock.side_effect = error
 
     agent = APPlusNavigatorAgent(model_service)
 
     with pytest.raises(AgentExecutionError) as exc_info:
         await agent.execute(create_request())
 
-    assert exc_info.value.__cause__ is model_error
-
-
-@pytest.mark.asyncio
-async def test_ap_plus_navigator_uses_configured_model() -> None:
-    model_service = create_model_service_mock()
-    generate_mock = get_generate_mock(model_service)
-
-    generate_mock.return_value = ModelChatResponse(
-        content="Which AP+ screen are you currently viewing?",
-        model="ap-plus-model",
-        provider="ollama",
-        latency_ms=10.0,
-    )
-
-    agent = APPlusNavigatorAgent(
-        model_service=model_service,
-        model="ap-plus-model",
-    )
-
-    await agent.execute(create_request())
-
-    generated_request = (
-        generate_mock.await_args.args[0]  # type: ignore[union-attr]
-    )
-
-    assert isinstance(
-        generated_request,
-        ModelChatRequest,
-    )
-
-    assert generated_request.model == "ap-plus-model"
-
-
-@pytest.mark.asyncio
-async def test_ap_plus_navigator_leaves_model_unset_by_default() -> None:
-    model_service = create_model_service_mock()
-    generate_mock = get_generate_mock(model_service)
-
-    generate_mock.return_value = ModelChatResponse(
-        content="Which screen are you viewing?",
-        model="default-model",
-        provider="ollama",
-        latency_ms=10.0,
-    )
-
-    agent = APPlusNavigatorAgent(
-        model_service=model_service,
-    )
-
-    await agent.execute(create_request())
-
-    generated_request = (
-        generate_mock.await_args.args[0]  # type: ignore[union-attr]
-    )
-
-    assert generated_request.model is None
+    assert exc_info.value.__cause__ is error

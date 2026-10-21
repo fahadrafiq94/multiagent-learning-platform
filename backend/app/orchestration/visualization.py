@@ -54,10 +54,12 @@ classDef agentNode fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#14532d;
 classDef fallbackNode fill:#ffedd5,stroke:#ea580c,stroke-width:2px,color:#431407;
 classDef outputNode fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#451a03;
 classDef terminalNode fill:#f1f5f9,stroke:#475569,stroke-width:2px,color:#0f172a;
+classDef stateNode fill:#ecfccb,stroke:#65a30d,stroke-width:2px,color:#365314;
 
 class prepare_input inputNode;
 class load_context contextNode;
 class route_request routingNode;
+class apply_state_updates stateNode;
 class scenario_onboarding onboardingNode;
 class scenario_agent,process_coach_agent,ap_plus_navigator_agent agentNode;
 class fallback_response fallbackNode;

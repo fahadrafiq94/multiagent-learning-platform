@@ -23,6 +23,10 @@ from app.agents.schemas import (
     AgentName,
     AgentRequest,
     AgentResponse,
+    SpecialistAgentOutput,
+)
+from app.agents.state_update_prompt import (
+    STATE_UPDATE_PROPOSAL_INSTRUCTIONS,
 )
 from app.context.agent_views import (
     AgentContextView,
@@ -235,6 +239,17 @@ class ScenarioAgent:
         self,
         request: AgentRequest,
     ) -> AgentResponse:
+        """
+        Execute the Scenario Agent for normal post-onboarding
+        scenario-related conversation.
+
+        The agent returns:
+        - a user-facing response
+        - optional controlled SessionContext update proposals
+
+        The agent does not persist state itself.
+        """
+
         if request.context is not None and request.context.target is not ContextTarget.SCENARIO:
             raise ValueError("ScenarioAgent requires SCENARIO context.")
 
@@ -247,6 +262,8 @@ class ScenarioAgent:
             f"Guidance level: "
             f"{request.guidance_level.value}\n"
             f"{guidance_instruction}"
+            "\n\n"
+            f"{STATE_UPDATE_PROPOSAL_INSTRUCTIONS}"
         )
 
         context_text = context_view_to_prompt_text(request.context)
@@ -266,10 +283,16 @@ class ScenarioAgent:
                 ),
             ],
             model=self._model,
+            response_schema=(SpecialistAgentOutput.model_json_schema()),
+            metadata={
+                "task": ("scenario_agent_response"),
+                "output_contract": ("specialist-agent-v2"),
+            },
         )
 
         try:
             model_response = await self._model_service.generate(model_request)
+
         except ModelServiceError as exc:
             raise AgentExecutionError(
                 ("Scenario Agent could not generate a response."),
@@ -279,23 +302,39 @@ class ScenarioAgent:
                 },
             ) from exc
 
-        content = model_response.content.strip()
+        raw_content = model_response.content.strip()
 
-        if not content:
+        if not raw_content:
             raise AgentExecutionError(
                 ("Scenario Agent returned an empty response."),
                 agent=self.name,
             )
 
+        try:
+            output = SpecialistAgentOutput.model_validate_json(raw_content)
+
+        except ValidationError as exc:
+            raise AgentExecutionError(
+                ("Scenario Agent returned invalid structured output."),
+                agent=self.name,
+                details={
+                    "task": ("scenario_agent_response"),
+                    "validation_errors": (exc.errors()),
+                },
+            ) from exc
+
         return AgentResponse(
             agent=self.name,
-            content=content,
+            content=output.content,
+            state_update_proposal=(output.state_update_proposal),
             metadata={
                 "model": (model_response.model),
                 "model_provider": (model_response.provider),
                 "model_latency_ms": (model_response.latency_ms),
                 "guidance_mode": ("scenario_clarification"),
                 "guidance_level": (request.guidance_level.value),
+                "state_update_operation_count": (len(output.state_update_proposal.operations)),
+                "output_contract": ("specialist-agent-v2"),
             },
         )
 

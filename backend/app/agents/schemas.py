@@ -4,12 +4,16 @@ from typing import Any, Literal
 
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
     field_validator,
 )
 
 from app.context.agent_views import (
     AgentContextView,
+)
+from app.context.state_updates import (
+    SessionStateUpdateProposal,
 )
 from app.domain.guidance import (
     GuidanceLevel,
@@ -25,9 +29,6 @@ AgentName = Literal[
 class AgentRequest(BaseModel):
     """
     Common request contract for FREDi specialist agents.
-
-    context contains the already filtered, agent-specific runtime
-    context produced by AgentContextPolicyService.
     """
 
     session_id: str = Field(min_length=1)
@@ -75,12 +76,49 @@ class AgentRequest(BaseModel):
         return stripped
 
 
+class SpecialistAgentOutput(BaseModel):
+    """
+    Structured LLM output from one specialist.
+
+    content:
+        user-facing answer
+
+    state_update_proposal:
+        optional runtime state proposal
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    content: str = Field(min_length=1)
+
+    state_update_proposal: SessionStateUpdateProposal = Field(
+        default_factory=(SessionStateUpdateProposal)
+    )
+
+    @field_validator("content")
+    @classmethod
+    def content_must_not_be_blank(
+        cls,
+        value: str,
+    ) -> str:
+        stripped = value.strip()
+
+        if not stripped:
+            raise ValueError("Specialist response must not be blank.")
+
+        return stripped
+
+
 class AgentResponse(BaseModel):
-    """Common specialist-agent output."""
+    """
+    Validated specialist-agent output.
+    """
 
     agent: AgentName
 
     content: str = Field(min_length=1)
+
+    state_update_proposal: SessionStateUpdateProposal | None = None
 
     metadata: dict[str, Any] = Field(default_factory=dict)
 

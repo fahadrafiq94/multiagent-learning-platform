@@ -7,6 +7,11 @@ from app.agents.policies import GuidanceLevel
 from app.agents.schemas import (
     AgentRequest,
     AgentResponse,
+    SpecialistAgentOutput,
+)
+from app.context.state_updates import (
+    SessionStateAction,
+    SessionStateField,
 )
 
 
@@ -178,3 +183,76 @@ def test_agent_response_rejects_unknown_agent() -> None:
                 "content": "Hello",
             }
         )
+
+
+def test_specialist_output_accepts_empty_state_proposal() -> None:
+    output = SpecialistAgentOutput(content="Useful response.")
+
+    assert output.content == "Useful response."
+
+    assert output.state_update_proposal.operations == []
+
+
+def test_specialist_output_accepts_state_proposal() -> None:
+    output = SpecialistAgentOutput.model_validate(
+        {
+            "content": ("Let's focus on step 8."),
+            "state_update_proposal": {
+                "operations": [
+                    {
+                        "field": ("current_step_id"),
+                        "action": "set",
+                        "value": "8",
+                        "reason": ("The user explicitly stated step 8."),
+                    }
+                ]
+            },
+        }
+    )
+
+    operation = output.state_update_proposal.operations[0]
+
+    assert operation.field == (SessionStateField.CURRENT_STEP_ID)
+
+    assert operation.action == SessionStateAction.SET
+
+
+def test_specialist_output_rejects_extra_fields() -> None:
+    with pytest.raises(ValidationError):
+        SpecialistAgentOutput.model_validate(
+            {
+                "content": "Response.",
+                "state_update_proposal": {
+                    "operations": [],
+                },
+                "unexpected": True,
+            }
+        )
+
+
+def test_specialist_output_rejects_blank_content() -> None:
+    with pytest.raises(ValidationError):
+        SpecialistAgentOutput(content="   ")
+
+
+def test_agent_response_accepts_state_update_proposal() -> None:
+    response = AgentResponse.model_validate(
+        {
+            "agent": ("ap_plus_navigator"),
+            "content": "Continue here.",
+            "state_update_proposal": {
+                "operations": [
+                    {
+                        "field": ("active_blocker"),
+                        "action": "set",
+                        "value": ("Supplier field cannot be found."),
+                        "reason": ("The user explicitly reported this blocker."),
+                    }
+                ]
+            },
+        }
+    )
+
+    assert response.state_update_proposal is not None
+
+    assert len(response.state_update_proposal.operations) == 1

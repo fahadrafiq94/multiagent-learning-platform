@@ -16,6 +16,7 @@ from app.context.policies import (
     AgentContextPolicyService,
 )
 from app.orchestration.nodes import (
+    apply_state_updates_node,
     execute_agent_node,
     fallback_response_node,
     finalize_response_node,
@@ -44,6 +45,9 @@ from app.services.scenario_onboarding_interaction_service import (
 from app.services.scenario_onboarding_service import (
     ScenarioOnboardingService,
 )
+from app.services.session_state_update_service import (
+    SessionStateUpdateService,
+)
 
 
 def build_orchestration_graph(
@@ -55,6 +59,7 @@ def build_orchestration_graph(
     context_policy_service: (AgentContextPolicyService),
     onboarding_service: (ScenarioOnboardingService),
     onboarding_interaction_service: (ScenarioOnboardingInteractionService),
+    session_state_update_service: (SessionStateUpdateService),
 ):
     """
     Build the Sprint 4B.5 runtime graph.
@@ -126,6 +131,14 @@ def build_orchestration_graph(
             conversation_service=(conversation_service),
         )
 
+    async def apply_state_updates(
+        state: OrchestrationState,
+    ) -> OrchestrationState:
+        return await apply_state_updates_node(
+            state,
+            session_state_update_service=(session_state_update_service),
+        )
+
     graph = StateGraph(OrchestrationState)
 
     graph.add_node(
@@ -166,6 +179,11 @@ def build_orchestration_graph(
     graph.add_node(
         "fallback_response",
         fallback_response_node,
+    )
+
+    graph.add_node(
+        "apply_state_updates",
+        apply_state_updates,
     )
 
     graph.add_node(
@@ -215,16 +233,21 @@ def build_orchestration_graph(
 
     graph.add_edge(
         "scenario_agent",
-        "finalize_response",
+        "apply_state_updates",
     )
 
     graph.add_edge(
         "process_coach_agent",
-        "finalize_response",
+        "apply_state_updates",
     )
 
     graph.add_edge(
         "ap_plus_navigator_agent",
+        "apply_state_updates",
+    )
+
+    graph.add_edge(
+        "apply_state_updates",
         "finalize_response",
     )
 

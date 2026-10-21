@@ -2,16 +2,11 @@ from __future__ import annotations
 
 import json
 from typing import cast
-from unittest.mock import (
-    AsyncMock,
-    MagicMock,
-)
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.context import (
-    ScenarioDraft,
-)
+from app.context import ScenarioDraft
 from app.identity import UserIdentity
 from app.orchestration.factory import (
     build_orchestration_runtime,
@@ -19,9 +14,7 @@ from app.orchestration.factory import (
 from app.orchestration.schemas import (
     OrchestrationRequest,
 )
-from app.services.model_service import (
-    ModelService,
-)
+from app.services.model_service import ModelService
 from app.services.model_service.schemas import (
     ModelChatRequest,
     ModelChatResponse,
@@ -33,10 +26,10 @@ def semantic_route(
 ) -> str:
     normalized = message.casefold()
 
-    if "ap+" in normalized:
+    if "ap+" in normalized or "field" in normalized:
         return "ap_plus_navigator"
 
-    if "why" in normalized or "procurement" in normalized:
+    if "why" in normalized or "procurement" in normalized or "purchase order" in normalized:
         return "process_coach"
 
     if "scenario" in normalized or "company" in normalized:
@@ -48,6 +41,7 @@ def semantic_route(
 def create_recording_model_service(
     *,
     review_intents: (list[dict[str, object]] | None) = None,
+    specialist_operations: (list[dict[str, object]] | None) = None,
 ) -> tuple[
     ModelService,
     AsyncMock,
@@ -104,7 +98,14 @@ def create_recording_model_service(
             )
 
         else:
-            content = "Integrated specialist response."
+            content = json.dumps(
+                {
+                    "content": ("Integrated specialist response."),
+                    "state_update_proposal": {
+                        "operations": (specialist_operations or []),
+                    },
+                }
+            )
 
         return ModelChatResponse(
             content=content,
@@ -161,7 +162,7 @@ async def test_complete_onboarding_then_normal_routing() -> None:
         requests,
     ) = create_recording_model_service()
 
-    runtime = build_orchestration_runtime(model_service=(model_service))
+    runtime = build_orchestration_runtime(model_service=model_service)
 
     user, session = await create_user_and_session(runtime)
 
@@ -172,10 +173,9 @@ async def test_complete_onboarding_then_normal_routing() -> None:
             user_message=(
                 "I am a Production "
                 "Planner at UrbanCycle. "
-                "Customer orders are "
-                "delayed and we want "
-                "better delivery "
-                "reliability."
+                "Orders are delayed "
+                "and we want better "
+                "delivery reliability."
             ),
         )
     )
@@ -204,9 +204,17 @@ async def test_complete_onboarding_then_normal_routing() -> None:
 
     assert third.route == "process_coach"
 
+    assert third.metadata["scenario_onboarding"] is False
+
     assert third.metadata["selected_agent"] == "process_coach"
 
-    assert third.metadata["scenario_onboarding"] is False
+    assert third.final_response == ("Integrated specialist response.")
+
+    assert third.metadata["state_update_applied"] is True
+
+    # extraction + review +
+    # router + specialist
+    assert generate_mock.await_count == 4
 
     tasks = [request.metadata.get("task") for request in requests]
 
@@ -216,43 +224,38 @@ async def test_complete_onboarding_then_normal_routing() -> None:
 
     assert "semantic_routing" in tasks
 
-    # extraction + review + router + specialist
-    assert generate_mock.await_count == 4
+    assert "process_coach_response" in tasks
 
 
 @pytest.mark.asyncio
 async def test_scenario_correction_is_reviewed_again_before_confirmation() -> None:
-    correction: dict[str, object] = {
-        "intent": "correct",
-        "reason": ("The user corrected their role."),
-        "correction": {
-            "company_context": None,
-            "learner_role": ("Senior Production Planner"),
-            "business_problem": None,
-            "business_goals": [],
-            "constraints": [],
-            "proposed_facts": [],
+    review_intents: list[dict[str, object]] = [
+        {
+            "intent": "correct",
+            "reason": ("The user corrected their role."),
+            "correction": {
+                "company_context": None,
+                "learner_role": ("Senior Production Planner"),
+                "business_problem": None,
+                "business_goals": [],
+                "constraints": [],
+                "proposed_facts": [],
+            },
         },
-    }
-
-    confirmation: dict[str, object] = {
-        "intent": "confirm",
-        "reason": ("The user accepted the corrected draft."),
-        "correction": None,
-    }
+        {
+            "intent": "confirm",
+            "reason": ("The user accepted the corrected draft."),
+            "correction": None,
+        },
+    ]
 
     (
         model_service,
         _,
         _,
-    ) = create_recording_model_service(
-        review_intents=[
-            correction,
-            confirmation,
-        ]
-    )
+    ) = create_recording_model_service(review_intents=(review_intents))
 
-    runtime = build_orchestration_runtime(model_service=(model_service))
+    runtime = build_orchestration_runtime(model_service=model_service)
 
     user, session = await create_user_and_session(runtime)
 
@@ -263,9 +266,9 @@ async def test_scenario_correction_is_reviewed_again_before_confirmation() -> No
             user_message=(
                 "I am a Production "
                 "Planner at UrbanCycle. "
-                "Orders are delayed and "
-                "we want better delivery "
-                "reliability."
+                "Orders are delayed "
+                "and we want better "
+                "delivery reliability."
             ),
         )
     )
@@ -280,9 +283,9 @@ async def test_scenario_correction_is_reviewed_again_before_confirmation() -> No
 
     assert corrected.metadata["onboarding_outcome"] == "corrected"
 
-    card_before = await runtime.scenario_card_service.get(user_id=user.user_id)
+    before_card = await runtime.scenario_card_service.get(user_id=user.user_id)
 
-    assert card_before is None
+    assert before_card is None
 
     await runtime.orchestration_service.execute(
         OrchestrationRequest(
@@ -300,6 +303,126 @@ async def test_scenario_correction_is_reviewed_again_before_confirmation() -> No
 
 
 @pytest.mark.asyncio
+async def test_ap_plus_state_proposal_is_persisted_through_real_graph() -> None:
+    operations: list[dict[str, object]] = [
+        {
+            "field": ("current_step_id"),
+            "action": "set",
+            "value": "8",
+            "reason": ("The user explicitly stated step 8."),
+        },
+        {
+            "field": ("active_blocker"),
+            "action": "set",
+            "value": ("Supplier field cannot be found."),
+            "reason": ("The user explicitly reported this blocker."),
+        },
+    ]
+
+    (
+        model_service,
+        _,
+        _,
+    ) = create_recording_model_service(specialist_operations=(operations))
+
+    runtime = build_orchestration_runtime(model_service=model_service)
+
+    user, session = await create_user_and_session(runtime)
+
+    await seed_confirmed_scenario(
+        runtime,
+        user=user,
+        session=session,
+    )
+
+    response = await runtime.orchestration_service.execute(
+        OrchestrationRequest(
+            session_id=str(session.session_id),
+            student_id=(user.student_id),
+            user_message=("I am at step 8 in AP+ and cannot find the supplier field."),
+        )
+    )
+
+    assert response.route == "ap_plus_navigator"
+
+    assert response.metadata["state_update_applied"] is True
+
+    assert response.metadata["state_update_accepted_count"] == 2
+
+    assert response.metadata["state_update_rejected_count"] == 0
+
+    context = await runtime.session_context_service.get_required(
+        user_id=user.user_id,
+        session_id=(session.session_id),
+    )
+
+    assert context.current_step_id == "8"
+
+    assert context.active_blocker == ("Supplier field cannot be found.")
+
+    assert context.last_selected_agent == "ap_plus_navigator"
+
+
+@pytest.mark.asyncio
+async def test_process_coach_step_proposal_is_rejected_through_real_graph() -> None:
+    operations: list[dict[str, object]] = [
+        {
+            "field": ("current_step_id"),
+            "action": "set",
+            "value": "17",
+            "reason": ("Deliberately invalid Process Coach proposal."),
+        },
+        {
+            "field": ("current_process_phase"),
+            "action": "set",
+            "value": "procurement",
+            "reason": ("The user is explicitly reasoning about procurement."),
+        },
+    ]
+
+    (
+        model_service,
+        _,
+        _,
+    ) = create_recording_model_service(specialist_operations=(operations))
+
+    runtime = build_orchestration_runtime(model_service=model_service)
+
+    user, session = await create_user_and_session(runtime)
+
+    await seed_confirmed_scenario(
+        runtime,
+        user=user,
+        session=session,
+    )
+
+    response = await runtime.orchestration_service.execute(
+        OrchestrationRequest(
+            session_id=str(session.session_id),
+            student_id=(user.student_id),
+            user_message=("Why is procurement important here?"),
+        )
+    )
+
+    assert response.route == "process_coach"
+
+    assert response.metadata["state_update_accepted_count"] == 1
+
+    assert response.metadata["state_update_rejected_count"] == 1
+
+    context = await runtime.session_context_service.get_required(
+        user_id=user.user_id,
+        session_id=(session.session_id),
+    )
+
+    assert context.current_step_id is None
+
+    assert context.current_process_phase == "procurement"
+
+    assert context.last_selected_agent == "process_coach"
+
+
+@pytest.mark.asyncio
 async def test_confirmed_scenario_bypasses_onboarding() -> None:
     (
         model_service,
@@ -307,7 +430,7 @@ async def test_confirmed_scenario_bypasses_onboarding() -> None:
         requests,
     ) = create_recording_model_service()
 
-    runtime = build_orchestration_runtime(model_service=(model_service))
+    runtime = build_orchestration_runtime(model_service=model_service)
 
     user, session = await create_user_and_session(runtime)
 
@@ -327,11 +450,15 @@ async def test_confirmed_scenario_bypasses_onboarding() -> None:
 
     assert response.route == "ap_plus_navigator"
 
+    assert response.metadata["scenario_onboarding"] is False
+
     assert response.metadata["selected_agent"] == "ap_plus_navigator"
 
     assert generate_mock.await_count == 2
 
-    assert requests[0].metadata.get("task") == "semantic_routing"
+    assert requests[0].metadata["task"] == "semantic_routing"
+
+    assert requests[1].metadata["task"] == ("ap_plus_navigator_response")
 
 
 @pytest.mark.asyncio
@@ -342,7 +469,7 @@ async def test_filtered_context_reaches_specialist_prompt() -> None:
         requests,
     ) = create_recording_model_service()
 
-    runtime = build_orchestration_runtime(model_service=(model_service))
+    runtime = build_orchestration_runtime(model_service=model_service)
 
     user, session = await create_user_and_session(runtime)
 
@@ -361,7 +488,9 @@ async def test_filtered_context_reaches_specialist_prompt() -> None:
     )
 
     specialist_requests = [
-        request for request in requests if (request.metadata.get("task") != "semantic_routing")
+        request
+        for request in requests
+        if (request.metadata.get("task") == "process_coach_response")
     ]
 
     assert len(specialist_requests) == 1

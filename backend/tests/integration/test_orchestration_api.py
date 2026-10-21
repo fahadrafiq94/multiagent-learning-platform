@@ -2,10 +2,7 @@ from __future__ import annotations
 
 import json
 from typing import cast
-from unittest.mock import (
-    AsyncMock,
-    MagicMock,
-)
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -19,16 +16,17 @@ from app.main import app
 from app.orchestration.factory import (
     build_orchestration_runtime,
 )
-from app.services.model_service import (
-    ModelService,
-)
+from app.services.model_service import ModelService
 from app.services.model_service.schemas import (
     ModelChatRequest,
     ModelChatResponse,
 )
 
 
-def create_model_service() -> tuple[
+def create_model_service(
+    *,
+    specialist_operations: (list[dict[str, object]] | None) = None,
+) -> tuple[
     ModelService,
     AsyncMock,
     list[ModelChatRequest],
@@ -71,12 +69,15 @@ def create_model_service() -> tuple[
         elif task == "semantic_routing":
             message = request.messages[-1].content.casefold()
 
-            if "ap+" in message:
+            if "ap+" in message or "field" in message:
                 route = "ap_plus_navigator"
-            elif "why" in message or "procurement" in message:
+
+            elif "why" in message or "procurement" in message or "purchase order" in message:
                 route = "process_coach"
+
             elif "scenario" in message or "company" in message:
                 route = "scenario"
+
             else:
                 route = "fallback"
 
@@ -88,7 +89,14 @@ def create_model_service() -> tuple[
             )
 
         else:
-            content = "Integrated API specialist response."
+            content = json.dumps(
+                {
+                    "content": ("Integrated API specialist response."),
+                    "state_update_proposal": {
+                        "operations": (specialist_operations or []),
+                    },
+                }
+            )
 
         return ModelChatResponse(
             content=content,
@@ -118,17 +126,34 @@ async def create_user_session(
     return user, session
 
 
-async def create_client(
+async def confirm_scenario(
+    runtime,
+    *,
+    user,
+    session,
+) -> None:
+    await runtime.scenario_card_service.confirm_draft(
+        user_id=user.user_id,
+        draft=ScenarioDraft(
+            user_id=user.user_id,
+            session_id=(session.session_id),
+            company_context=("UrbanCycle manufactures bicycles."),
+            learner_role=("Production Planner"),
+            business_problem=("Customer orders are delayed."),
+            business_goals=[("Improve delivery reliability.")],
+        ),
+    )
+
+
+def create_client(
     runtime,
 ) -> httpx.AsyncClient:
     app.dependency_overrides[orchestration_routes.get_orchestration_service] = lambda: (
         runtime.orchestration_service
     )
 
-    transport = httpx.ASGITransport(app=app)
-
     return httpx.AsyncClient(
-        transport=transport,
+        transport=(httpx.ASGITransport(app=app)),
         base_url="http://test",
     )
 
@@ -141,16 +166,16 @@ async def test_http_new_user_enters_scenario_onboarding() -> None:
         requests,
     ) = create_model_service()
 
-    runtime = build_orchestration_runtime(model_service=(model_service))
+    runtime = build_orchestration_runtime(model_service=model_service)
 
     user, session = await create_user_session(runtime)
 
-    client = await create_client(runtime)
+    client = create_client(runtime)
 
     try:
         async with client:
             response = await client.post(
-                "/orchestration/invoke",
+                ("/orchestration/invoke"),
                 json={
                     "session_id": str(session.session_id),
                     "student_id": (user.student_id),
@@ -158,9 +183,9 @@ async def test_http_new_user_enters_scenario_onboarding() -> None:
                         "I am a Production "
                         "Planner at "
                         "UrbanCycle. Orders "
-                        "are delayed and we "
-                        "want reliable "
-                        "delivery dates."
+                        "are delayed and "
+                        "we want better "
+                        "delivery reliability."
                     ),
                 },
             )
@@ -187,31 +212,25 @@ async def test_http_confirmed_user_uses_normal_routing() -> None:
     (
         model_service,
         generate_mock,
-        _,
+        requests,
     ) = create_model_service()
 
-    runtime = build_orchestration_runtime(model_service=(model_service))
+    runtime = build_orchestration_runtime(model_service=model_service)
 
     user, session = await create_user_session(runtime)
 
-    await runtime.scenario_card_service.confirm_draft(
-        user_id=user.user_id,
-        draft=ScenarioDraft(
-            user_id=user.user_id,
-            session_id=(session.session_id),
-            company_context=("UrbanCycle manufactures bicycles."),
-            learner_role=("Production Planner"),
-            business_problem=("Customer orders are delayed."),
-            business_goals=[("Improve delivery reliability.")],
-        ),
+    await confirm_scenario(
+        runtime,
+        user=user,
+        session=session,
     )
 
-    client = await create_client(runtime)
+    client = create_client(runtime)
 
     try:
         async with client:
             response = await client.post(
-                "/orchestration/invoke",
+                ("/orchestration/invoke"),
                 json={
                     "session_id": str(session.session_id),
                     "student_id": (user.student_id),
@@ -227,47 +246,62 @@ async def test_http_confirmed_user_uses_normal_routing() -> None:
 
     assert body["route"] == "process_coach"
 
+    assert body["metadata"]["scenario_onboarding"] is False
+
     assert body["metadata"]["selected_agent"] == "process_coach"
+
+    assert body["metadata"]["state_update_applied"] is True
 
     assert body["final_response"] == ("Integrated API specialist response.")
 
     assert generate_mock.await_count == 2
 
+    assert requests[1].metadata["task"] == ("process_coach_response")
+
 
 @pytest.mark.asyncio
-async def test_http_ap_plus_routes_to_navigator_after_onboarding() -> None:
+async def test_http_ap_plus_state_update_is_persisted() -> None:
+    operations: list[dict[str, object]] = [
+        {
+            "field": ("current_step_id"),
+            "action": "set",
+            "value": "8",
+            "reason": ("The user explicitly stated step 8."),
+        },
+        {
+            "field": ("active_blocker"),
+            "action": "set",
+            "value": ("Supplier field cannot be found."),
+            "reason": ("The user explicitly reported this blocker."),
+        },
+    ]
+
     (
         model_service,
         _,
         _,
-    ) = create_model_service()
+    ) = create_model_service(specialist_operations=(operations))
 
-    runtime = build_orchestration_runtime(model_service=(model_service))
+    runtime = build_orchestration_runtime(model_service=model_service)
 
     user, session = await create_user_session(runtime)
 
-    await runtime.scenario_card_service.confirm_draft(
-        user_id=user.user_id,
-        draft=ScenarioDraft(
-            user_id=user.user_id,
-            session_id=(session.session_id),
-            company_context=("UrbanCycle manufactures bicycles."),
-            learner_role=("Production Planner"),
-            business_problem=("Orders are delayed."),
-            business_goals=[("Improve delivery reliability.")],
-        ),
+    await confirm_scenario(
+        runtime,
+        user=user,
+        session=session,
     )
 
-    client = await create_client(runtime)
+    client = create_client(runtime)
 
     try:
         async with client:
             response = await client.post(
-                "/orchestration/invoke",
+                ("/orchestration/invoke"),
                 json={
                     "session_id": str(session.session_id),
                     "student_id": (user.student_id),
-                    "user_message": ("Where do I find this field in AP+?"),
+                    "user_message": ("I am at step 8 in AP+ and cannot find the supplier field."),
                 },
             )
     finally:
@@ -279,27 +313,38 @@ async def test_http_ap_plus_routes_to_navigator_after_onboarding() -> None:
 
     assert body["route"] == "ap_plus_navigator"
 
-    assert body["metadata"]["selected_agent"] == "ap_plus_navigator"
+    assert body["metadata"]["state_update_applied"] is True
+
+    assert body["metadata"]["state_update_accepted_count"] == 2
+
+    context = await runtime.session_context_service.get_required(
+        user_id=user.user_id,
+        session_id=(session.session_id),
+    )
+
+    assert context.current_step_id == "8"
+
+    assert context.active_blocker == ("Supplier field cannot be found.")
 
 
 @pytest.mark.asyncio
-async def test_http_invalid_request_without_student_id_returns_422() -> None:
+async def test_http_missing_student_id_returns_422() -> None:
     (
         model_service,
         generate_mock,
         _,
     ) = create_model_service()
 
-    runtime = build_orchestration_runtime(model_service=(model_service))
+    runtime = build_orchestration_runtime(model_service=model_service)
 
-    client = await create_client(runtime)
+    client = create_client(runtime)
 
     try:
         async with client:
             response = await client.post(
-                "/orchestration/invoke",
+                ("/orchestration/invoke"),
                 json={
-                    "session_id": ("whatever"),
+                    "session_id": ("some-session"),
                     "user_message": ("Hello"),
                 },
             )

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pydantic import ValidationError
+
 from app.agents.context_prompt import (
     context_view_to_prompt_text,
 )
@@ -13,6 +15,10 @@ from app.agents.schemas import (
     AgentName,
     AgentRequest,
     AgentResponse,
+    SpecialistAgentOutput,
+)
+from app.agents.state_update_prompt import (
+    STATE_UPDATE_PROPOSAL_INSTRUCTIONS,
 )
 from app.context.agent_views import (
     ContextTarget,
@@ -119,6 +125,8 @@ class APPlusNavigatorAgent:
             f"Guidance level: "
             f"{request.guidance_level.value}\n"
             f"{guidance}"
+            "\n\n"
+            f"{STATE_UPDATE_PROPOSAL_INSTRUCTIONS}"
         )
 
         context_text = context_view_to_prompt_text(request.context)
@@ -138,6 +146,11 @@ class APPlusNavigatorAgent:
                 ),
             ],
             model=self._model,
+            response_schema=(SpecialistAgentOutput.model_json_schema()),
+            metadata={
+                "task": ("ap_plus_navigator_response"),
+                "output_contract": ("specialist-agent-v2"),
+            },
         )
 
         try:
@@ -159,14 +172,27 @@ class APPlusNavigatorAgent:
                 agent=self.name,
             )
 
+        try:
+            output = SpecialistAgentOutput.model_validate_json(content)
+        except ValidationError as exc:
+            raise AgentExecutionError(
+                ("AP+ Navigator Agent returned invalid structured output."),
+                agent=self.name,
+                details={
+                    "validation_errors": (exc.errors()),
+                },
+            ) from exc
+
         return AgentResponse(
             agent=self.name,
-            content=content,
+            content=output.content,
+            state_update_proposal=(output.state_update_proposal),
             metadata={
                 "model": response.model,
                 "model_provider": (response.provider),
                 "model_latency_ms": (response.latency_ms),
                 "guidance_mode": ("system_navigation"),
                 "guidance_level": (request.guidance_level.value),
+                "state_update_operation_count": (len(output.state_update_proposal.operations)),
             },
         )

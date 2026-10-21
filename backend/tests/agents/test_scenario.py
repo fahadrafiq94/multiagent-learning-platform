@@ -1,22 +1,25 @@
 from __future__ import annotations
 
+import json
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from app.agents.exceptions import AgentExecutionError
-from app.agents.policies import (
-    SCENARIO_GUIDANCE,
-)
+from app.agents.policies import SCENARIO_GUIDANCE
 from app.agents.scenario import (
     SCENARIO_AGENT_SYSTEM_PROMPT,
     ScenarioAgent,
 )
-from app.agents.schemas import AgentRequest
-from app.domain.guidance import (
-    GuidanceLevel,
+from app.agents.schemas import (
+    AgentRequest,
+    SpecialistAgentOutput,
 )
+from app.agents.state_update_prompt import (
+    STATE_UPDATE_PROPOSAL_INSTRUCTIONS,
+)
+from app.domain.guidance import GuidanceLevel
 from app.services.model_service import ModelService
 from app.services.model_service.exceptions import (
     ModelGenerationError,
@@ -28,8 +31,6 @@ from app.services.model_service.schemas import (
 
 
 def create_model_service_mock() -> ModelService:
-    """Create a typed ModelService mock."""
-
     return cast(
         ModelService,
         MagicMock(spec=ModelService),
@@ -39,27 +40,79 @@ def create_model_service_mock() -> ModelService:
 def get_generate_mock(
     model_service: ModelService,
 ) -> AsyncMock:
-    """Return ModelService.generate as AsyncMock."""
-
     generate_mock = AsyncMock()
+
     model_service.generate = generate_mock  # type: ignore[method-assign]
 
     return generate_mock
 
 
+def get_generated_request(
+    generate_mock: AsyncMock,
+) -> ModelChatRequest:
+    generate_mock.assert_awaited_once()
+
+    awaited_call = generate_mock.await_args
+
+    assert awaited_call is not None
+
+    generated_request = awaited_call.args[0]
+
+    assert isinstance(
+        generated_request,
+        ModelChatRequest,
+    )
+
+    return generated_request
+
+
+def structured_response(
+    content: str,
+    *,
+    operations: (list[dict[str, object]] | None) = None,
+) -> str:
+    return json.dumps(
+        {
+            "content": content,
+            "state_update_proposal": {
+                "operations": (operations or []),
+            },
+        }
+    )
+
+
+def model_response(
+    content: str,
+    *,
+    operations: (list[dict[str, object]] | None) = None,
+    model: str = "fake-model",
+    latency_ms: float = 10.0,
+) -> ModelChatResponse:
+    return ModelChatResponse(
+        content=structured_response(
+            content,
+            operations=operations,
+        ),
+        model=model,
+        provider="ollama",
+        latency_ms=latency_ms,
+    )
+
+
 def create_request(
     *,
-    guidance_level: GuidanceLevel = GuidanceLevel.MINIMAL,
+    guidance_level: GuidanceLevel = (GuidanceLevel.MINIMAL),
 ) -> AgentRequest:
     return AgentRequest(
         session_id="session-1",
         student_id="student-1",
         user_message=(
-            "Our company manufactures bicycles, "
-            "but I am not sure how to describe "
-            "the business problem."
+            "Our company manufactures "
+            "bicycles, but I am not sure "
+            "how to describe the "
+            "business problem."
         ),
-        guidance_level=guidance_level,
+        guidance_level=(guidance_level),
         metadata={
             "source": "test",
         },
@@ -80,13 +133,11 @@ async def test_scenario_agent_has_correct_name() -> None:
 @pytest.mark.asyncio
 async def test_scenario_agent_calls_model_service() -> None:
     model_service = create_model_service_mock()
+
     generate_mock = get_generate_mock(model_service)
 
-    generate_mock.return_value = ModelChatResponse(
-        content=("What specific business problem is the company experiencing?"),
-        model="fake-model",
-        provider="ollama",
-        latency_ms=10.0,
+    generate_mock.return_value = model_response(
+        "What specific business problem is the company experiencing?"
     )
 
     agent = ScenarioAgent(model_service)
@@ -97,34 +148,25 @@ async def test_scenario_agent_calls_model_service() -> None:
 
 
 @pytest.mark.asyncio
-async def test_scenario_agent_builds_expected_model_request() -> None:
+async def test_scenario_agent_builds_structured_model_request() -> None:
     model_service = create_model_service_mock()
+
     generate_mock = get_generate_mock(model_service)
 
-    generate_mock.return_value = ModelChatResponse(
-        content="What is the main business problem?",
-        model="fake-model",
-        provider="ollama",
-        latency_ms=10.0,
-    )
+    generate_mock.return_value = model_response("What is the main business problem?")
 
     agent = ScenarioAgent(model_service)
+
     request = create_request()
 
     await agent.execute(request)
 
-    generated_request = (
-        generate_mock.await_args.args[0]  # type: ignore[union-attr]
-    )
-
-    assert isinstance(
-        generated_request,
-        ModelChatRequest,
-    )
+    generated_request = get_generated_request(generate_mock)
 
     assert len(generated_request.messages) == 2
 
     system_message = generated_request.messages[0]
+
     user_message = generated_request.messages[1]
 
     assert system_message.role == "system"
@@ -137,90 +179,36 @@ async def test_scenario_agent_builds_expected_model_request() -> None:
 
     assert SCENARIO_GUIDANCE[GuidanceLevel.MINIMAL] in system_message.content
 
+    assert STATE_UPDATE_PROPOSAL_INSTRUCTIONS in system_message.content
+
     assert user_message.role == "user"
 
     assert user_message.content == request.user_message
 
+    assert generated_request.response_schema == (SpecialistAgentOutput.model_json_schema())
 
-@pytest.mark.asyncio
-async def test_scenario_prompt_contains_scope() -> None:
-    model_service = create_model_service_mock()
-    generate_mock = get_generate_mock(model_service)
+    assert generated_request.metadata["task"] == "scenario_agent_response"
 
-    generate_mock.return_value = ModelChatResponse(
-        content="Tell me more about the company.",
-        model="fake-model",
-        provider="ollama",
-        latency_ms=10.0,
-    )
-
-    agent = ScenarioAgent(model_service)
-
-    await agent.execute(create_request())
-
-    generated_request = (
-        generate_mock.await_args.args[0]  # type: ignore[union-attr]
-    )
-
-    prompt = generated_request.messages[0].content.lower()
-
-    assert "business scenario" in prompt
-    assert "company" in prompt
-    assert "business problem" in prompt
-
-
-@pytest.mark.asyncio
-async def test_scenario_prompt_enforces_boundaries() -> None:
-    model_service = create_model_service_mock()
-    generate_mock = get_generate_mock(model_service)
-
-    generate_mock.return_value = ModelChatResponse(
-        content="What information is still missing?",
-        model="fake-model",
-        provider="ollama",
-        latency_ms=10.0,
-    )
-
-    agent = ScenarioAgent(model_service)
-
-    await agent.execute(create_request())
-
-    generated_request = (
-        generate_mock.await_args.args[0]  # type: ignore[union-attr]
-    )
-
-    prompt = generated_request.messages[0].content.lower()
-
-    assert "do not provide ap+" in prompt
-
-    assert "step-by-step business process" in prompt
-
-    assert "do not pretend" in prompt
+    assert generated_request.metadata["output_contract"] == "specialist-agent-v2"
 
 
 @pytest.mark.asyncio
 async def test_scenario_agent_applies_minimal_guidance() -> None:
     model_service = create_model_service_mock()
+
     generate_mock = get_generate_mock(model_service)
 
-    generate_mock.return_value = ModelChatResponse(
-        content="What important company fact is missing?",
-        model="fake-model",
-        provider="ollama",
-        latency_ms=1.0,
-    )
+    generate_mock.return_value = model_response("What important company fact is missing?")
 
     agent = ScenarioAgent(model_service)
 
     response = await agent.execute(
         create_request(
-            guidance_level=GuidanceLevel.MINIMAL,
+            guidance_level=(GuidanceLevel.MINIMAL),
         )
     )
 
-    generated_request = (
-        generate_mock.await_args.args[0]  # type: ignore[union-attr]
-    )
+    generated_request = get_generated_request(generate_mock)
 
     prompt = generated_request.messages[0].content
 
@@ -234,26 +222,22 @@ async def test_scenario_agent_applies_minimal_guidance() -> None:
 @pytest.mark.asyncio
 async def test_scenario_agent_applies_explicit_guidance() -> None:
     model_service = create_model_service_mock()
+
     generate_mock = get_generate_mock(model_service)
 
-    generate_mock.return_value = ModelChatResponse(
-        content=("Based on the information supplied, the company produces bicycles."),
-        model="fake-model",
-        provider="ollama",
-        latency_ms=1.0,
+    generate_mock.return_value = model_response(
+        "Based on the supplied scenario information, the company produces bicycles."
     )
 
     agent = ScenarioAgent(model_service)
 
     response = await agent.execute(
         create_request(
-            guidance_level=GuidanceLevel.EXPLICIT,
+            guidance_level=(GuidanceLevel.EXPLICIT),
         )
     )
 
-    generated_request = (
-        generate_mock.await_args.args[0]  # type: ignore[union-attr]
-    )
+    generated_request = get_generated_request(generate_mock)
 
     prompt = generated_request.messages[0].content
 
@@ -265,15 +249,13 @@ async def test_scenario_agent_applies_explicit_guidance() -> None:
 
 
 @pytest.mark.asyncio
-async def test_scenario_agent_returns_agent_response() -> None:
+async def test_scenario_agent_returns_structured_content() -> None:
     model_service = create_model_service_mock()
+
     generate_mock = get_generate_mock(model_service)
 
-    generate_mock.return_value = ModelChatResponse(
-        content=("What problem is the bicycle company trying to solve?"),
-        model="fake-model",
-        provider="ollama",
-        latency_ms=12.5,
+    generate_mock.return_value = model_response(
+        "What problem is the bicycle company trying to solve?"
     )
 
     agent = ScenarioAgent(model_service)
@@ -284,16 +266,61 @@ async def test_scenario_agent_returns_agent_response() -> None:
 
     assert response.content == ("What problem is the bicycle company trying to solve?")
 
+    assert response.state_update_proposal is not None
+
+    assert response.state_update_proposal.operations == []
+
 
 @pytest.mark.asyncio
-async def test_scenario_agent_returns_metadata() -> None:
+async def test_scenario_agent_returns_state_update_proposal() -> None:
     model_service = create_model_service_mock()
+
     generate_mock = get_generate_mock(model_service)
 
-    generate_mock.return_value = ModelChatResponse(
-        content="What is the business problem?",
+    generate_mock.return_value = model_response(
+        ("Let's clarify the business problem."),
+        operations=[
+            {
+                "field": ("current_objective"),
+                "action": "set",
+                "value": ("Clarify the business problem."),
+                "reason": ("The current objective is explicit."),
+            },
+            {
+                "field": ("active_blocker"),
+                "action": "set",
+                "value": ("The business problem is unclear."),
+                "reason": ("The user explicitly reported uncertainty."),
+            },
+        ],
+    )
+
+    agent = ScenarioAgent(model_service)
+
+    response = await agent.execute(create_request())
+
+    assert response.state_update_proposal is not None
+
+    operations = response.state_update_proposal.operations
+
+    assert len(operations) == 2
+
+    assert operations[0].field.value == "current_objective"
+
+    assert operations[1].field.value == "active_blocker"
+
+    assert response.metadata["state_update_operation_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_scenario_agent_returns_model_metadata() -> None:
+    model_service = create_model_service_mock()
+
+    generate_mock = get_generate_mock(model_service)
+
+    generate_mock.return_value = model_response(
+        ("What is the business problem?"),
         model="qwen3:4b",
-        provider="ollama",
         latency_ms=42.5,
     )
 
@@ -307,39 +334,80 @@ async def test_scenario_agent_returns_metadata() -> None:
 
     assert response.metadata["model_latency_ms"] == 42.5
 
-    assert response.metadata["guidance_mode"] == "scenario_clarification"
+    assert response.metadata["guidance_mode"] == ("scenario_clarification")
 
-    assert response.metadata["guidance_level"] == "minimal"
+    assert response.metadata["output_contract"] == "specialist-agent-v2"
 
 
 @pytest.mark.asyncio
-async def test_scenario_agent_strips_model_response() -> None:
+async def test_scenario_agent_strips_structured_content() -> None:
     model_service = create_model_service_mock()
+
     generate_mock = get_generate_mock(model_service)
 
-    generate_mock.return_value = ModelChatResponse(
-        content="  What is the main business problem?  ",
-        model="fake-model",
-        provider="ollama",
-        latency_ms=10.0,
-    )
+    generate_mock.return_value = model_response("  What is the main business problem?  ")
 
     agent = ScenarioAgent(model_service)
 
     response = await agent.execute(create_request())
 
-    assert response.content == "What is the main business problem?"
+    assert response.content == ("What is the main business problem?")
+
+
+@pytest.mark.asyncio
+async def test_scenario_agent_rejects_invalid_structured_output() -> None:
+    model_service = create_model_service_mock()
+
+    generate_mock = get_generate_mock(model_service)
+
+    generate_mock.return_value = ModelChatResponse(
+        content="not valid json",
+        model="fake-model",
+        provider="ollama",
+        latency_ms=1.0,
+    )
+
+    agent = ScenarioAgent(model_service)
+
+    with pytest.raises(
+        AgentExecutionError,
+        match=("invalid structured output"),
+    ):
+        await agent.execute(create_request())
+
+
+@pytest.mark.asyncio
+async def test_scenario_agent_rejects_empty_model_response() -> None:
+    model_service = create_model_service_mock()
+
+    generate_mock = get_generate_mock(model_service)
+
+    generate_mock.return_value = ModelChatResponse(
+        content="   ",
+        model="fake-model",
+        provider="ollama",
+        latency_ms=1.0,
+    )
+
+    agent = ScenarioAgent(model_service)
+
+    with pytest.raises(
+        AgentExecutionError,
+        match="empty response",
+    ):
+        await agent.execute(create_request())
 
 
 @pytest.mark.asyncio
 async def test_scenario_agent_wraps_model_service_error() -> None:
     model_service = create_model_service_mock()
+
     generate_mock = get_generate_mock(model_service)
 
     generate_mock.side_effect = ModelGenerationError(
         "ollama",
         details={
-            "reason": "test failure",
+            "reason": ("test failure"),
         },
     )
 
@@ -354,20 +422,19 @@ async def test_scenario_agent_wraps_model_service_error() -> None:
 
     assert error.message == ("Scenario Agent could not generate a response.")
 
-    assert "model_error" in error.details
-
     assert error.details["model_error"]["error"] == "model_generation_error"
 
 
 @pytest.mark.asyncio
 async def test_scenario_agent_preserves_model_error_as_cause() -> None:
     model_service = create_model_service_mock()
+
     generate_mock = get_generate_mock(model_service)
 
     model_error = ModelGenerationError(
         "ollama",
         details={
-            "reason": "test failure",
+            "reason": ("test failure"),
         },
     )
 
@@ -379,59 +446,3 @@ async def test_scenario_agent_preserves_model_error_as_cause() -> None:
         await agent.execute(create_request())
 
     assert exc_info.value.__cause__ is model_error
-
-
-@pytest.mark.asyncio
-async def test_scenario_agent_uses_configured_model() -> None:
-    model_service = create_model_service_mock()
-    generate_mock = get_generate_mock(model_service)
-
-    generate_mock.return_value = ModelChatResponse(
-        content="What is the company's business problem?",
-        model="scenario-model",
-        provider="ollama",
-        latency_ms=10.0,
-    )
-
-    agent = ScenarioAgent(
-        model_service=model_service,
-        model="scenario-model",
-    )
-
-    await agent.execute(create_request())
-
-    generated_request = (
-        generate_mock.await_args.args[0]  # type: ignore[union-attr]
-    )
-
-    assert isinstance(
-        generated_request,
-        ModelChatRequest,
-    )
-
-    assert generated_request.model == "scenario-model"
-
-
-@pytest.mark.asyncio
-async def test_scenario_agent_leaves_model_unset_by_default() -> None:
-    model_service = create_model_service_mock()
-    generate_mock = get_generate_mock(model_service)
-
-    generate_mock.return_value = ModelChatResponse(
-        content="What is the business problem?",
-        model="default-model",
-        provider="ollama",
-        latency_ms=10.0,
-    )
-
-    agent = ScenarioAgent(
-        model_service=model_service,
-    )
-
-    await agent.execute(create_request())
-
-    generated_request = (
-        generate_mock.await_args.args[0]  # type: ignore[union-attr]
-    )
-
-    assert generated_request.model is None

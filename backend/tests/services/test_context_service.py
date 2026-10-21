@@ -636,7 +636,16 @@ async def test_context_metadata_describes_loaded_context() -> None:
 
     assert context.metadata.adaptation_count == 0
 
-    assert context.metadata.estimated_input_tokens == 0
+    metadata = context.metadata
+    assert metadata.estimated_input_tokens is not None
+    assert metadata.estimated_essential_tokens is not None
+    assert metadata.estimated_history_tokens is not None
+    assert metadata.input_token_budget is not None
+    assert metadata.estimated_input_tokens > 0
+    assert metadata.estimated_input_tokens == (
+        metadata.estimated_essential_tokens + metadata.estimated_history_tokens
+    )
+    assert metadata.estimated_input_tokens <= metadata.input_token_budget
 
     assert context.metadata.truncation_applied is False
 
@@ -723,3 +732,81 @@ async def test_context_service_keeps_sessions_isolated() -> None:
     assert context_a.session_context.current_step_id == "8"
 
     assert context_b.session_context.current_step_id == "17"
+
+
+@pytest.mark.asyncio
+async def test_essential_context_overflow_is_rejected() -> None:
+    from app.context.budget import ContextBudgetPolicy, ContextBudgetService
+    from app.services.context_service import ContextBudgetExceededError
+
+    repositories, conversations, users, sessions, _ = create_services()
+    user, session = await create_user_and_session(
+        repositories=repositories,
+        conversation_service=conversations,
+    )
+    service = ContextService(
+        user_context_service=users,
+        session_context_service=sessions,
+        conversation_service=conversations,
+        budget_service=ContextBudgetService(
+            policy=ContextBudgetPolicy(max_context_tokens=2, reserved_output_tokens=1),
+        ),
+    )
+    with pytest.raises(ContextBudgetExceededError) as caught:
+        await service.build(
+            user_id=user.user_id,
+            session_id=session.session_id,
+            current_message="Keep this required question",
+        )
+    assert caught.value.essential_tokens > caught.value.input_token_budget
+    assert caught.value.input_token_budget == 1
+
+
+@pytest.mark.asyncio
+async def test_budget_keeps_newest_history_and_reports_dropped_messages() -> None:
+    from app.context.budget import ContextBudgetPolicy, ContextBudgetService
+    from app.context.token_estimator import ApproximateTokenEstimator
+
+    repositories, conversations, users, sessions, _ = create_services()
+    user, session = await create_user_and_session(
+        repositories=repositories,
+        conversation_service=conversations,
+    )
+    service = ContextService(
+        user_context_service=users,
+        session_context_service=sessions,
+        conversation_service=conversations,
+        budget_service=ContextBudgetService(
+            estimator=ApproximateTokenEstimator(
+                characters_per_token=1,
+                message_overhead_tokens=0,
+            ),
+            policy=ContextBudgetPolicy(
+                max_context_tokens=4000,
+                reserved_output_tokens=500,
+            ),
+        ),
+    )
+    for index in range(6):
+        await conversations.append_user_message(
+            user_id=user.user_id,
+            session_id=session.session_id,
+            content=f"{index}:" + "x" * 1000,
+        )
+    context = await service.build(
+        user_id=user.user_id,
+        session_id=session.session_id,
+        current_message="Current question",
+    )
+    retained = context.recent_messages
+    assert 0 < len(retained) < 6
+    assert [message.content[:2] for message in retained] == [
+        f"{index}:" for index in range(6 - len(retained), 6)
+    ]
+    metadata = context.metadata
+    assert metadata.candidate_message_count == 6
+    assert metadata.dropped_message_count == 6 - len(retained)
+    assert metadata.truncation_applied is True
+    assert metadata.estimated_input_tokens is not None
+    assert metadata.input_token_budget is not None
+    assert metadata.estimated_input_tokens <= metadata.input_token_budget
