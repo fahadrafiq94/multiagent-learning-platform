@@ -8,7 +8,11 @@ from app.orchestration.schemas import (
     OrchestrationRequest,
     OrchestrationResponse,
 )
-from app.orchestration.service import OrchestrationServiceError
+from app.orchestration.service import (
+    InvalidSessionIdError,
+    OrchestrationServiceError,
+    UnknownStudentError,
+)
 
 
 class FakeOrchestrationService:
@@ -38,6 +42,22 @@ class FailingOrchestrationService:
         request: OrchestrationRequest,
     ) -> OrchestrationResponse:
         raise OrchestrationServiceError("The orchestration workflow failed unexpectedly.")
+
+
+class UnknownStudentService:
+    async def execute(
+        self,
+        request: OrchestrationRequest,
+    ) -> OrchestrationResponse:
+        raise UnknownStudentError("No FREDi user identity exists for the supplied student_id.")
+
+
+class InvalidSessionIdService:
+    async def execute(
+        self,
+        request: OrchestrationRequest,
+    ) -> OrchestrationResponse:
+        raise InvalidSessionIdError("session_id must be a valid FREDi session UUID.")
 
 
 def override_orchestration_service() -> FakeOrchestrationService:
@@ -142,3 +162,50 @@ def test_invoke_orchestration_route_handles_service_failure() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 500
+
+
+def test_invoke_orchestration_route_unknown_student_returns_404() -> None:
+    def override_unknown_student() -> UnknownStudentService:
+        return UnknownStudentService()
+
+    app.dependency_overrides[orchestration_routes.get_orchestration_service] = (
+        override_unknown_student
+    )
+
+    try:
+        response = client.post(
+            "/orchestration/invoke",
+            json={
+                "session_id": ("session-1"),
+                "student_id": ("K12345"),
+                "user_message": ("Hello"),
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    # A client input problem must never be reported as a server error.
+    assert response.status_code == 404
+
+
+def test_invoke_orchestration_route_invalid_session_returns_422() -> None:
+    def override_invalid_session() -> InvalidSessionIdService:
+        return InvalidSessionIdService()
+
+    app.dependency_overrides[orchestration_routes.get_orchestration_service] = (
+        override_invalid_session
+    )
+
+    try:
+        response = client.post(
+            "/orchestration/invoke",
+            json={
+                "session_id": ("not-a-uuid"),
+                "student_id": ("K12345"),
+                "user_message": ("Hello"),
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422

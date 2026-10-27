@@ -21,7 +21,7 @@ class ApproximateTokenEstimator:
         self,
         *,
         characters_per_token: float = 4.0,
-        message_overhead_tokens: int = 4,
+        message_overhead_tokens: int = 32,
     ) -> None:
         if characters_per_token <= 0:
             raise ValueError("characters_per_token must be greater than zero.")
@@ -60,6 +60,11 @@ class ApproximateTokenEstimator:
         """
         Estimate one conversation message including structural
         message overhead.
+
+        The overhead covers the JSON rendering used by agents
+        (role, content, created_at, and optional agent/route
+        fields), which costs roughly 25-30 tokens per message
+        regardless of content length.
         """
 
         text_tokens = self.estimate_text(content)

@@ -41,6 +41,7 @@ def semantic_route(
 def create_model_service(
     *,
     specialist_operations: (list[dict[str, object]] | None) = None,
+    specialist_assessment: (dict[str, object] | None) = None,
 ) -> tuple[
     ModelService,
     AsyncMock,
@@ -81,6 +82,19 @@ def create_model_service(
                 }
             )
 
+        elif task == "session_summary_update":
+            content = json.dumps(
+                {
+                    "overview": ("Compact summary of the earlier turn."),
+                    "established_facts": (["Earlier messages summarized."]),
+                    "decisions": [],
+                    "blockers": [],
+                    "unresolved_questions": [],
+                    "misconception_candidates": [],
+                    "completed_step_ids": [],
+                }
+            )
+
         elif task == "semantic_routing":
             route = semantic_route(request.messages[-1].content)
 
@@ -92,14 +106,17 @@ def create_model_service(
             )
 
         else:
-            content = json.dumps(
-                {
-                    "content": ("Fake specialist response."),
-                    "state_update_proposal": {
-                        "operations": (specialist_operations or []),
-                    },
-                }
-            )
+            payload: dict[str, object] = {
+                "content": ("Fake specialist response."),
+                "state_update_proposal": {
+                    "operations": (specialist_operations or []),
+                },
+            }
+
+            if specialist_assessment is not None:
+                payload["response_assessment"] = specialist_assessment
+
+            content = json.dumps(payload)
 
         return ModelChatResponse(
             content=content,
@@ -424,3 +441,157 @@ def test_graph_has_start_and_end() -> None:
 
     assert "__start__" in mermaid
     assert "__end__" in mermaid
+
+
+@pytest.mark.asyncio
+async def test_specialist_turn_updates_session_summary_in_graph() -> None:
+    (
+        model_service,
+        _,
+        requests,
+    ) = create_model_service()
+
+    runtime = build_orchestration_runtime(model_service=model_service)
+
+    user, session = await create_user_and_session(runtime)
+
+    await confirm_scenario(
+        runtime,
+        user=user,
+        session=session,
+    )
+
+    # Seed the conversation so this turn pushes enough messages out
+    # of the recent window to trigger a summary update:
+    # total(24) - recent_window(20) - covered(0) >= min_new(4).
+    for index in range(23):
+        await runtime.conversation_service.append_user_message(
+            user_id=user.user_id,
+            session_id=session.session_id,
+            content=(f"seed message {index}"),
+        )
+
+    response = await runtime.orchestration_service.execute(
+        OrchestrationRequest(
+            session_id=str(session.session_id),
+            student_id=(user.student_id),
+            user_message=("Why do we need a purchase order in procurement?"),
+        )
+    )
+
+    assert response.route == "process_coach"
+    assert response.metadata["summary_update_attempted"] is True
+    assert response.metadata["summary_update_applied"] is True
+    assert response.metadata["summary_update_error"] is None
+
+    summary_tasks = [
+        request
+        for request in requests
+        if request.metadata.get("task") == ("session_summary_update")
+    ]
+
+    assert len(summary_tasks) == 1
+
+    # Only the four oldest messages were summarized, never the full archive.
+    summary_input = summary_tasks[0].messages[-1].content
+
+    assert "seed message 0" in summary_input
+    assert "seed message 3" in summary_input
+    assert "seed message 4" not in summary_input
+
+    context = await runtime.session_context_service.get_required(
+        user_id=user.user_id,
+        session_id=session.session_id,
+    )
+
+    assert context.summary is not None
+    assert context.summary.source_message_count == 4
+    assert context.summary.user_id == user.user_id
+    assert context.summary.session_id == session.session_id
+
+
+def test_graph_wires_signal_node_on_specialist_path_only() -> None:
+    (
+        model_service,
+        _,
+        _,
+    ) = create_model_service()
+
+    runtime = build_orchestration_runtime(model_service=model_service)
+
+    edges = {
+        (
+            edge[0],
+            edge[1],
+        )
+        for edge in (runtime.graph.get_graph().edges)
+    }
+
+    # Specialist path runs the signal node between state updates
+    # and the summary node.
+    assert ("apply_state_updates", "record_response_signal") in edges
+
+    assert ("record_response_signal", "update_session_summary") in edges
+
+    # Fallback path bypasses the signal node (no specialist ran,
+    # so no response was assessed).
+    assert ("fallback_response", "update_session_summary") in edges
+
+    assert ("fallback_response", "record_response_signal") not in edges
+
+    # Onboarding bypasses both signal and summary nodes.
+    assert ("scenario_onboarding", "finalize_response") in edges
+
+    assert ("scenario_onboarding", "record_response_signal") not in edges
+
+
+@pytest.mark.asyncio
+async def test_specialist_turn_records_response_signal_in_graph() -> None:
+    (
+        model_service,
+        _,
+        _,
+    ) = create_model_service(
+        specialist_assessment={
+            "understanding": ("incorrect"),
+            "misconception_detected": (True),
+            "reason": ("The student described the invoice as the purchase order."),
+        },
+    )
+
+    runtime = build_orchestration_runtime(model_service=model_service)
+
+    user, session = await create_user_and_session(runtime)
+
+    await confirm_scenario(
+        runtime,
+        user=user,
+        session=session,
+    )
+
+    response = await runtime.orchestration_service.execute(
+        OrchestrationRequest(
+            session_id=str(session.session_id),
+            student_id=(user.student_id),
+            user_message=("Why do we need a purchase order in procurement?"),
+        )
+    )
+
+    assert response.route == "process_coach"
+
+    assert response.metadata["response_assessed"] is True
+
+    assert response.metadata["response_signal_recorded"] is True
+
+    assert response.metadata["response_understanding"] == "incorrect"
+
+    assert response.metadata["response_misconception_detected"] is True
+
+    user_context = await runtime.user_context_service.get_required(
+        user_id=user.user_id,
+    )
+
+    # Only the deterministic counter moved, never the raw assessment.
+    assert user_context.hint_state.consecutive_unproductive_attempts == 1
+
+    assert user_context.hint_state.successful_independent_steps == 0

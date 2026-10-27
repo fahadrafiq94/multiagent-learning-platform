@@ -18,7 +18,10 @@ class OrchestrationRequest(BaseModel):
 
     student_id: str = Field(min_length=1)
 
-    user_message: str = Field(min_length=1)
+    # The bound matches ConversationMessage.content (LongText, 4000)
+    # so an over-long message is rejected at the API boundary with a
+    # 422 instead of failing deep inside message persistence.
+    user_message: str = Field(min_length=1, max_length=4_000)
 
     metadata: dict[str, Any] = Field(default_factory=dict)
 

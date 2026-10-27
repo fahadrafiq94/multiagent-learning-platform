@@ -133,7 +133,7 @@ def test_routing_decision_rejects_reason_over_limit() -> None:
     with pytest.raises(ValidationError):
         RoutingDecision(
             route="scenario",
-            reason="x" * 301,
+            reason="x" * 501,
         )
 
 

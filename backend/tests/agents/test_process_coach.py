@@ -19,7 +19,7 @@ from app.agents.schemas import (
     SpecialistAgentOutput,
 )
 from app.agents.state_update_prompt import (
-    STATE_UPDATE_PROPOSAL_INSTRUCTIONS,
+    state_update_proposal_instructions,
 )
 from app.domain.guidance import GuidanceLevel
 from app.services.model_service import ModelService
@@ -170,7 +170,7 @@ async def test_process_coach_builds_structured_model_request() -> None:
 
     assert PROCESS_COACH_GUIDANCE[GuidanceLevel.MINIMAL] in system_message.content
 
-    assert STATE_UPDATE_PROPOSAL_INSTRUCTIONS in system_message.content
+    assert state_update_proposal_instructions("process_coach") in system_message.content
 
     assert generated_request.messages[1].content == request.user_message
 

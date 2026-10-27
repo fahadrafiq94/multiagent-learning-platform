@@ -94,6 +94,19 @@ class OllamaModelProvider:
         except ModelProviderUnavailableError:
             raise
 
+        except httpx.HTTPStatusError as exc:
+            # Preserve the status code and provider body so callers
+            # can distinguish e.g. a 404 "model not pulled" from a 5xx.
+            raise ModelGenerationError(
+                self.provider_name,
+                details={
+                    "endpoint": "/api/chat",
+                    "model": model,
+                    "status_code": (exc.response.status_code),
+                    "response_text": (exc.response.text),
+                },
+            ) from exc
+
         except Exception as exc:
             raise ModelGenerationError(
                 self.provider_name,
@@ -165,6 +178,22 @@ class OllamaModelProvider:
 
                         chunk_data = self._parse_stream_line(line)
 
+                        # Ollama signals runtime generation failures
+                        # (e.g. context overflow) as HTTP 200 chunks
+                        # with an error key. Surface them as errors
+                        # instead of ending the stream successfully.
+                        stream_error = chunk_data.get("error")
+
+                        if stream_error:
+                            raise ModelGenerationError(
+                                self.provider_name,
+                                details={
+                                    "endpoint": "/api/chat",
+                                    "model": model,
+                                    "stream_error": str(stream_error),
+                                },
+                            )
+
                         message = chunk_data.get("message") or {}
 
                         content = str(message.get("content") or "")
@@ -204,6 +233,11 @@ class OllamaModelProvider:
                     "model": model,
                 },
             ) from exc
+
+        except ModelGenerationError:
+            # Raised for mid-stream error chunks above; do not
+            # double-wrap it.
+            raise
 
         except httpx.HTTPStatusError as exc:
             raise ModelGenerationError(
@@ -292,31 +326,52 @@ class OllamaModelProvider:
                 },
             )
 
+        try:
+            response = ModelEmbeddingResponse(
+                embeddings=embeddings,
+                model=model,
+                provider=self.provider_name,
+                latency_ms=latency_ms,
+                raw=response_data,
+            )
+
+        except (TypeError, ValueError) as exc:
+            # The payload list exists but its entries are not numeric;
+            # fail as a clean embedding error instead of a 500.
+            raise ModelEmbeddingError(
+                self.provider_name,
+                details={
+                    "error": ("Ollama returned an invalid embeddings payload."),
+                    "model": model,
+                    "validation_error": str(exc),
+                },
+            ) from exc
+
         logger.info(
             "Model_embedding_completed",
             provider=self.provider_name,
             model=model,
             latency_ms=latency_ms,
-            embedding_count=len(embeddings),
+            embedding_count=len(response.embeddings),
         )
 
-        return ModelEmbeddingResponse(
-            embeddings=embeddings,
-            model=model,
-            provider=self.provider_name,
-            latency_ms=latency_ms,
-            raw=response_data,
-        )
+        return response
 
     async def health(
         self,
     ) -> ModelHealthResponse:
-        """Check whether Ollama is reachable."""
+        """Check whether Ollama is reachable.
+
+        A health probe must be fast: it performs a single attempt with
+        a short timeout instead of the full generation retry policy,
+        so a hanging provider cannot block the container healthcheck
+        for minutes.
+        """
 
         start = time.perf_counter()
 
         try:
-            response_data = await self._get_json_with_retries("/api/tags")
+            response_data = await self._get_json_once("/api/tags")
 
         except ModelTimeoutError:
             return ModelHealthResponse(
@@ -440,29 +495,23 @@ class OllamaModelProvider:
             endpoint=endpoint,
         )
 
-    async def _get_json_with_retries(
+    async def _get_json_once(
         self,
         endpoint: str,
     ) -> dict[str, Any]:
-        """GET JSON from Ollama with configured retry behavior."""
+        """GET JSON from Ollama with one attempt and a short timeout."""
 
-        async def operation() -> dict[str, Any]:
-            timeout = httpx.Timeout(self.timeout_seconds)
+        timeout = httpx.Timeout(min(self.timeout_seconds, 10.0))
 
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.get(f"{self.base_url}{endpoint}")
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.get(f"{self.base_url}{endpoint}")
 
-                response.raise_for_status()
+            response.raise_for_status()
 
-                return cast(
-                    dict[str, Any],
-                    response.json(),
-                )
-
-        return await self._run_with_retries(
-            operation,
-            endpoint=endpoint,
-        )
+            return cast(
+                dict[str, Any],
+                response.json(),
+            )
 
     async def _run_with_retries(
         self,

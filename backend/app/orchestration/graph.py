@@ -22,8 +22,10 @@ from app.orchestration.nodes import (
     finalize_response_node,
     load_context_node,
     prepare_input_node,
+    record_response_signal_node,
     route_request_node,
     scenario_onboarding_node,
+    update_session_summary_node,
 )
 from app.orchestration.router import (
     route_after_context_load,
@@ -48,6 +50,12 @@ from app.services.scenario_onboarding_service import (
 from app.services.session_state_update_service import (
     SessionStateUpdateService,
 )
+from app.services.session_summary_service import (
+    SessionSummaryService,
+)
+from app.services.user_context_service import (
+    UserContextService,
+)
 
 
 def build_orchestration_graph(
@@ -60,6 +68,8 @@ def build_orchestration_graph(
     onboarding_service: (ScenarioOnboardingService),
     onboarding_interaction_service: (ScenarioOnboardingInteractionService),
     session_state_update_service: (SessionStateUpdateService),
+    session_summary_service: (SessionSummaryService),
+    user_context_service: (UserContextService),
 ):
     """
     Build the Sprint 4B.5 runtime graph.
@@ -137,6 +147,23 @@ def build_orchestration_graph(
         return await apply_state_updates_node(
             state,
             session_state_update_service=(session_state_update_service),
+            user_context_service=(user_context_service),
+        )
+
+    async def record_response_signal(
+        state: OrchestrationState,
+    ) -> OrchestrationState:
+        return await record_response_signal_node(
+            state,
+            user_context_service=(user_context_service),
+        )
+
+    async def update_session_summary(
+        state: OrchestrationState,
+    ) -> OrchestrationState:
+        return await update_session_summary_node(
+            state,
+            summary_service=(session_summary_service),
         )
 
     graph = StateGraph(OrchestrationState)
@@ -184,6 +211,16 @@ def build_orchestration_graph(
     graph.add_node(
         "apply_state_updates",
         apply_state_updates,
+    )
+
+    graph.add_node(
+        "record_response_signal",
+        record_response_signal,
+    )
+
+    graph.add_node(
+        "update_session_summary",
+        update_session_summary,
     )
 
     graph.add_node(
@@ -248,11 +285,21 @@ def build_orchestration_graph(
 
     graph.add_edge(
         "apply_state_updates",
-        "finalize_response",
+        "record_response_signal",
+    )
+
+    graph.add_edge(
+        "record_response_signal",
+        "update_session_summary",
     )
 
     graph.add_edge(
         "fallback_response",
+        "update_session_summary",
+    )
+
+    graph.add_edge(
+        "update_session_summary",
         "finalize_response",
     )
 

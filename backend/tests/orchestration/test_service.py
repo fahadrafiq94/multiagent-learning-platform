@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 from uuid import uuid4
 
 import pytest
 
 from app.identity import UserIdentity
+from app.observability.events import (
+    REQUEST_COMPLETED_EVENT,
+    REQUEST_EVENT_LOGGER_NAME,
+)
 from app.orchestration.schemas import (
     OrchestrationRequest,
 )
@@ -233,6 +238,125 @@ async def test_orchestration_service_rejects_unknown_student_id() -> None:
                 user_message="Hello",
             )
         )
+
+
+def _request_events(
+    caplog: pytest.LogCaptureFixture,
+) -> list[logging.LogRecord]:
+    return [record for record in caplog.records if record.name == REQUEST_EVENT_LOGGER_NAME]
+
+
+def _event_payload(
+    record: logging.LogRecord,
+) -> dict[str, Any]:
+    payload = getattr(record, "event", None)
+
+    assert isinstance(payload, dict)
+
+    return payload
+
+
+@pytest.mark.asyncio
+async def test_orchestration_service_emits_single_request_event_on_success(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    (
+        identity_repository,
+        identity,
+    ) = await create_identity_repository()
+
+    service = OrchestrationService(
+        graph=FakeGraph(),
+        identity_repository=(identity_repository),
+    )
+
+    session_id = str(uuid4())
+
+    with caplog.at_level(
+        logging.INFO,
+        logger=(REQUEST_EVENT_LOGGER_NAME),
+    ):
+        await service.execute(
+            OrchestrationRequest(
+                session_id=session_id,
+                student_id="K12345",
+                user_message="Hello",
+            )
+        )
+
+    events = _request_events(caplog)
+
+    assert len(events) == 1
+
+    assert events[0].msg == REQUEST_COMPLETED_EVENT
+
+    event = _event_payload(events[0])
+
+    assert event["outcome"] == "completed"
+
+    assert event["error"] is None
+
+    assert event["student_id"] == "K12345"
+
+    assert event["session_id"] == session_id
+
+    assert event["user_id"] == str(identity.user_id)
+
+    assert event["route"] == "process_coach"
+
+    assert event["route_reason"] == ("Fake routing reason.")
+
+    # Duration is wall-clock and clock-resolution dependent (coarse
+    # on some virtualized Windows hosts); assert it is recorded, not
+    # its magnitude.
+    assert event["duration_ms"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_orchestration_service_emits_error_event_and_still_raises(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    (
+        identity_repository,
+        _,
+    ) = await create_identity_repository()
+
+    service = OrchestrationService(
+        graph=FailingGraph(),
+        identity_repository=(identity_repository),
+    )
+
+    with caplog.at_level(
+        logging.INFO,
+        logger=(REQUEST_EVENT_LOGGER_NAME),
+    ):
+        with pytest.raises(
+            OrchestrationServiceError,
+            match=("workflow failed unexpectedly"),
+        ):
+            await service.execute(
+                OrchestrationRequest(
+                    session_id=str(uuid4()),
+                    student_id="K12345",
+                    user_message="Hello",
+                )
+            )
+
+    events = _request_events(caplog)
+
+    assert len(events) == 1
+
+    event = _event_payload(events[0])
+
+    assert event["outcome"] == "error"
+
+    assert event["error"] == "Graph failed"
+
+    assert event["student_id"] == "K12345"
+
+    assert event["route"] is None
+
+    assert event["duration_ms"] >= 0
 
 
 @pytest.mark.asyncio

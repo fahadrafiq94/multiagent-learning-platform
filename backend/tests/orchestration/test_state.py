@@ -20,7 +20,7 @@ def test_orchestration_state_accepts_route_and_response() -> None:
         "user_message": "I need help with the business problem.",
         "route": "process_coach",
         "route_reason": "Student asks for process reasoning support.",
-        "model_response": "Let us reason about the process first.",
+        "agent_response": "Let us reason about the process first.",
         "final_response": "Let us reason about the process first.",
         "error": None,
         "metadata": {"test": True},

@@ -263,7 +263,7 @@ Responsibilities:
 - Compose or validate final response.
 - Trigger logging and memory updates.
 
-The Orchestrator should be deterministic where possible. Use LLM classification only when rule-based routing is insufficient.
+Routing strategy (v2, as implemented): the LLM semantic router is the primary router; the deterministic keyword classifier runs as a fallback when the LLM router is unavailable or returns `fallback`. Routing decisions (agent, reason, strategy) are logged on every turn and persisted on the assistant message.
 
 ### 8.2 Scenario Agent
 

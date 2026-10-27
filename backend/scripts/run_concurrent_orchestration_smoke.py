@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-from app.orchestration import (
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.orchestration import (  # noqa: E402
     OrchestrationRequest,
+    OrchestrationServiceError,
     create_orchestration_service,
+)
+from scripts.smoke_support import (  # noqa: E402
+    ensure_students,
+    new_session_id,
 )
 
 
@@ -26,7 +35,7 @@ class SmokeResult:
     """Result captured from one concurrent request."""
 
     case: SmokeCase
-    actual_route: str
+    actual_route: str | None
     selected_agent: str | None
     semantic_route: str | None
     semantic_failed: bool | None
@@ -115,22 +124,34 @@ async def execute_case(
 ) -> SmokeResult:
     """Execute one student's request through the shared service."""
 
-    session_id = f"concurrency-smoke-{index}"
-
     started = time.perf_counter()
 
-    response = await service.execute(
-        OrchestrationRequest(
-            session_id=session_id,
-            student_id=case.student_id,
-            user_message=case.message,
-            metadata={
-                "source": ("concurrent-orchestration-smoke"),
-                "case_index": index,
-                "case_name": case.name,
-            },
+    try:
+        response = await service.execute(
+            OrchestrationRequest(
+                session_id=new_session_id("concurrency-smoke"),
+                student_id=case.student_id,
+                user_message=case.message,
+                metadata={
+                    "source": ("concurrent-orchestration-smoke"),
+                    "case_index": index,
+                    "case_name": case.name,
+                },
+            )
         )
-    )
+    except OrchestrationServiceError as exc:
+        return SmokeResult(
+            case=case,
+            actual_route=None,
+            selected_agent=None,
+            semantic_route=None,
+            semantic_failed=None,
+            keyword_fallback_used=None,
+            response="",
+            error=str(exc),
+            elapsed_seconds=time.perf_counter() - started,
+            metadata={},
+        )
 
     elapsed = time.perf_counter() - started
 
@@ -237,6 +258,8 @@ def print_summary(
 
 async def main() -> None:
     """Run multiple independent students concurrently."""
+
+    await ensure_students([case.student_id for case in TEST_CASES])
 
     service = create_orchestration_service()
 

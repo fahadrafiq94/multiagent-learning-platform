@@ -9,18 +9,13 @@ from uuid import UUID
 
 from app.agents.schemas import (
     AgentName,
+    StudentResponseAssessment,
 )
 from app.context.schemas import (
     AgentContext,
 )
 from app.context.state_updates import (
     SessionStateUpdateProposal,
-)
-from app.domain.guidance import (
-    GuidanceLevel,
-)
-from app.services.scenario_onboarding_interaction_schemas import (
-    ScenarioOnboardingTurnResult,
 )
 
 RouteName = Literal[
@@ -60,26 +55,21 @@ class OrchestrationState(
     base_context: AgentContext
     onboarding_required: bool
 
-    # Onboarding
-    onboarding_result: ScenarioOnboardingTurnResult
-
     # Routing
     route: RouteName
     route_reason: str
 
-    # Guidance fallback
-    guidance_level: GuidanceLevel
-
     # Agent output
     selected_agent: AgentName
 
-    # Agent output
     agent_response: str
 
     state_update_proposal: SessionStateUpdateProposal | None
 
-    # Compatibility
-    model_response: str
+    # Specialist's judgment of the student's current message (4B.9).
+    # LLM-generated; only deterministic counters derived from it are
+    # persisted.
+    response_assessment: StudentResponseAssessment | None
 
     # Final
     final_response: str

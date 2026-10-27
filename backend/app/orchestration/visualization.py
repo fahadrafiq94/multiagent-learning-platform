@@ -58,8 +58,10 @@ classDef stateNode fill:#ecfccb,stroke:#65a30d,stroke-width:2px,color:#365314;
 
 class prepare_input inputNode;
 class load_context contextNode;
+class update_session_summary contextNode;
 class route_request routingNode;
 class apply_state_updates stateNode;
+class record_response_signal stateNode;
 class scenario_onboarding onboardingNode;
 class scenario_agent,process_coach_agent,ap_plus_navigator_agent agentNode;
 class fallback_response fallbackNode;

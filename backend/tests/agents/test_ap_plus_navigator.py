@@ -19,7 +19,7 @@ from app.agents.schemas import (
     SpecialistAgentOutput,
 )
 from app.agents.state_update_prompt import (
-    STATE_UPDATE_PROPOSAL_INSTRUCTIONS,
+    state_update_proposal_instructions,
 )
 from app.domain.guidance import GuidanceLevel
 from app.services.model_service import ModelService
@@ -164,7 +164,7 @@ async def test_ap_plus_navigator_builds_structured_model_request() -> None:
 
     assert AP_PLUS_NAVIGATOR_GUIDANCE[GuidanceLevel.MINIMAL] in prompt
 
-    assert STATE_UPDATE_PROPOSAL_INSTRUCTIONS in prompt
+    assert state_update_proposal_instructions("ap_plus_navigator") in prompt
 
     assert generated_request.messages[1].content == request.user_message
 

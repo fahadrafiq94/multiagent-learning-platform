@@ -11,18 +11,9 @@ from app.repositories import (
     SessionContextRepository,
     VersionConflictError,
 )
-
-
-def _normalized_text(
-    value: str,
-) -> str:
-    """
-    Normalize text for duplicate comparison.
-
-    Stored text preserves the original user-facing formatting.
-    """
-
-    return " ".join(value.split()).casefold()
+from app.utils.text import (
+    text_comparison_key as _normalized_text,
+)
 
 
 class SessionContextService:

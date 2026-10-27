@@ -11,6 +11,9 @@ from app.context import (
     SessionSummary,
 )
 from app.context.budget import ContextBudgetService
+from app.domain.guidance_policy import (
+    select_guidance,
+)
 from app.services.conversation_service import (
     ConversationService,
 )
@@ -64,11 +67,18 @@ class ContextService:
         session_context_service: SessionContextService,
         conversation_service: ConversationService,
         budget_service: ContextBudgetService | None = None,
+        agent_prompt_reserve_tokens: int = 1500,
     ) -> None:
         self._user_context_service = user_context_service
         self._session_context_service = session_context_service
         self._conversation_service = conversation_service
         self._budget_service = budget_service or ContextBudgetService()
+
+        # Each selected agent prepends its own system prompt,
+        # guidance policy, and state-update instructions. Reserve
+        # budget for that prompt content so recent-history
+        # selection does not assume it costs zero tokens.
+        self._agent_prompt_reserve_tokens = agent_prompt_reserve_tokens
 
     async def build(
         self,
@@ -114,6 +124,14 @@ class ContextService:
             limit=policy.max_recent_messages,
         )
 
+        # Guidance is selected centrally by deterministic policy
+        # (Sprint 4B.9) from persisted signals + session state —
+        # never copied raw and never chosen by an LLM.
+        guidance = select_guidance(
+            hint_state=user_context.hint_state,
+            session_context=session_context,
+        )
+
         context = AgentContext(
             user_id=user_id,
             session_id=session_id,
@@ -123,8 +141,8 @@ class ContextService:
             progress=(user_context.progress),
             session_context=(session_context),
             recent_messages=(recent_messages),
-            session_summary=None,
-            guidance_level=(user_context.hint_state.guidance_level),
+            session_summary=(session_context.summary),
+            guidance_level=(guidance.level),
             user_adaptations=list(user_context.adaptations),
             knowledge_chunks=[],
         )
@@ -138,6 +156,7 @@ class ContextService:
             messages=recent_messages,
             essential_texts=[essential],
             policy=policy,
+            extra_essential_tokens=(self._agent_prompt_reserve_tokens),
         )
         if budget.estimated_essential_tokens > budget.input_token_budget:
             raise ContextBudgetExceededError(
@@ -155,7 +174,8 @@ class ContextService:
                 adaptation_count=len(context.user_adaptations),
             ),
             recent_message_count=budget.selected_message_count,
-            summary_included=False,
+            summary_included=(context.session_summary is not None),
+            guidance_reason=(guidance.reason),
             knowledge_chunk_count=0,
             adaptation_count=len(context.user_adaptations),
             estimated_input_tokens=budget.estimated_input_tokens,

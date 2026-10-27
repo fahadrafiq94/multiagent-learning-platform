@@ -22,8 +22,19 @@ router = APIRouter(prefix="/model", tags=["model"])
 
 
 def get_model_service() -> ModelService:
-    """FastAPI dependency for the configured model service."""
-    return create_model_service()
+    """FastAPI dependency for the configured model service.
+
+    A misconfigured provider fails with a clean 503 here instead of
+    an unhandled 500, because service construction happens inside
+    the dependency rather than inside a route handler.
+    """
+    try:
+        return create_model_service()
+    except ModelServiceError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=exc.to_dict(),
+        ) from exc
 
 
 ModelServiceDep = Annotated[ModelService, Depends(get_model_service)]

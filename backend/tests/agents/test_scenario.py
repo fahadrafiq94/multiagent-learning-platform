@@ -17,7 +17,7 @@ from app.agents.schemas import (
     SpecialistAgentOutput,
 )
 from app.agents.state_update_prompt import (
-    STATE_UPDATE_PROPOSAL_INSTRUCTIONS,
+    state_update_proposal_instructions,
 )
 from app.domain.guidance import GuidanceLevel
 from app.services.model_service import ModelService
@@ -179,7 +179,7 @@ async def test_scenario_agent_builds_structured_model_request() -> None:
 
     assert SCENARIO_GUIDANCE[GuidanceLevel.MINIMAL] in system_message.content
 
-    assert STATE_UPDATE_PROPOSAL_INSTRUCTIONS in system_message.content
+    assert state_update_proposal_instructions("scenario") in system_message.content
 
     assert user_message.role == "user"
 

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Annotated
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    StringConstraints,
     field_validator,
     model_validator,
 )
@@ -19,19 +21,56 @@ class ScenarioDraftExtraction(BaseModel):
     or persistence.
     """
 
+    # Length bounds mirror the persistent ScenarioDraft constraints so
+    # an over-long extraction fails at parse time with a clear model
+    # error instead of a raw ValidationError deep in the draft merge.
+
     model_config = ConfigDict(extra="forbid")
 
-    company_context: str | None = None
+    company_context: Annotated[
+        str | None,
+        StringConstraints(min_length=1, max_length=4_000),
+    ] = None
 
-    learner_role: str | None = None
+    learner_role: Annotated[
+        str | None,
+        StringConstraints(min_length=1, max_length=255),
+    ] = None
 
-    business_problem: str | None = None
+    business_problem: Annotated[
+        str | None,
+        StringConstraints(min_length=1, max_length=4_000),
+    ] = None
 
-    business_goals: list[str] | None = None
+    business_goals: (
+        list[
+            Annotated[
+                str,
+                StringConstraints(min_length=1, max_length=1_000),
+            ]
+        ]
+        | None
+    ) = None
 
-    constraints: list[str] | None = None
+    constraints: (
+        list[
+            Annotated[
+                str,
+                StringConstraints(min_length=1, max_length=1_000),
+            ]
+        ]
+        | None
+    ) = None
 
-    proposed_facts: list[str] | None = None
+    proposed_facts: (
+        list[
+            Annotated[
+                str,
+                StringConstraints(min_length=1, max_length=1_000),
+            ]
+        ]
+        | None
+    ) = None
 
     @field_validator(
         "company_context",
@@ -101,7 +140,7 @@ class ScenarioReviewDecision(BaseModel):
 
     reason: str = Field(
         min_length=1,
-        max_length=300,
+        max_length=500,
     )
 
     correction: ScenarioDraftExtraction | None = None

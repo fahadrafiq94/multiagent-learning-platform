@@ -8,9 +8,13 @@ from app.context import (
     ConversationSession,
     SessionContext,
 )
+from app.logging.logger import (
+    logger,
+)
 from app.repositories import (
     ConversationRepository,
     ConversationSessionRepository,
+    RepositoryError,
     RepositoryNotFoundError,
     SessionContextRepository,
 )
@@ -319,7 +323,18 @@ class ConversationService:
 
         stored_message = await self._conversation_repository.append(message)
 
-        await self._touch_session(session)
+        try:
+            await self._touch_session(session)
+        except RepositoryError as exc:
+            # The activity touch is best-effort: the message is
+            # already persisted, and re-raising would make a caller
+            # retry duplicate the message.
+            logger.warning(
+                "Session_activity_touch_failed",
+                session_id=str(session_id),
+                message_id=str(stored_message.message_id),
+                error=str(exc),
+            )
 
         return stored_message
 

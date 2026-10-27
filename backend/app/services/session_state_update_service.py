@@ -5,6 +5,9 @@ from pydantic import BaseModel, Field
 from app.agents.schemas import (
     AgentName,
 )
+from app.agents.state_update_prompt import (
+    AGENT_STATE_FIELD_POLICY,
+)
 from app.context.schemas import (
     SessionContext,
     SessionContextUpdate,
@@ -18,29 +21,9 @@ from app.context.state_updates import (
 from app.services.session_context_service import (
     SessionContextService,
 )
-
-_ALLOWED_FIELDS: dict[
-    AgentName,
-    set[SessionStateField],
-] = {
-    "scenario": {
-        SessionStateField.CURRENT_OBJECTIVE,
-        SessionStateField.ACTIVE_BLOCKER,
-        SessionStateField.UNRESOLVED_QUESTIONS,
-    },
-    "process_coach": {
-        SessionStateField.CURRENT_OBJECTIVE,
-        SessionStateField.CURRENT_PROCESS_PHASE,
-        SessionStateField.ACTIVE_BLOCKER,
-        SessionStateField.UNRESOLVED_QUESTIONS,
-    },
-    "ap_plus_navigator": {
-        SessionStateField.CURRENT_STEP_ID,
-        SessionStateField.CURRENT_PROCESS_PHASE,
-        SessionStateField.ACTIVE_BLOCKER,
-        SessionStateField.UNRESOLVED_QUESTIONS,
-    },
-}
+from app.utils.text import (
+    text_comparison_key,
+)
 
 
 class RejectedStateUpdate(BaseModel):
@@ -97,7 +80,7 @@ class SessionStateUpdateService:
 
         unresolved_questions = list(current.unresolved_questions)
 
-        allowed_fields = _ALLOWED_FIELDS[agent_name]
+        allowed_fields = AGENT_STATE_FIELD_POLICY[agent_name]
 
         operations = proposal.operations if proposal is not None else []
 
@@ -221,11 +204,9 @@ class SessionStateUpdateService:
         if value is None:
             return False
 
-        key = SessionStateUpdateService._comparison_key(value)
+        key = text_comparison_key(value)
 
-        existing_keys = {
-            SessionStateUpdateService._comparison_key(item) for item in unresolved_questions
-        }
+        existing_keys = {text_comparison_key(item) for item in unresolved_questions}
 
         if operation.action == SessionStateAction.ADD:
             if key in existing_keys:
@@ -237,7 +218,7 @@ class SessionStateUpdateService:
 
         if operation.action == SessionStateAction.REMOVE:
             for index, item in enumerate(unresolved_questions):
-                if SessionStateUpdateService._comparison_key(item) == key:
+                if text_comparison_key(item) == key:
                     unresolved_questions.pop(index)
 
                     return True
@@ -245,9 +226,3 @@ class SessionStateUpdateService:
             return False
 
         return False
-
-    @staticmethod
-    def _comparison_key(
-        value: str,
-    ) -> str:
-        return " ".join(value.casefold().split())

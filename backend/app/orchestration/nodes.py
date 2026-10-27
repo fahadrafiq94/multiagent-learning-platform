@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from uuid import UUID
+
 from app.agents.exceptions import (
     AgentError,
 )
 from app.agents.orchestrator import (
     OrchestratorAgent,
     OrchestratorRoutingError,
+)
+from app.agents.policies import (
+    next_guidance_level,
 )
 from app.agents.registry import (
     AgentRegistry,
@@ -27,8 +33,15 @@ from app.context.schemas import (
     ScenarioDraft,
     ScenarioRequiredField,
 )
+from app.context.state_updates import (
+    SessionStateAction,
+    SessionStateField,
+)
 from app.domain.guidance import (
     GuidanceLevel,
+)
+from app.domain.guidance_policy import (
+    assessment_signal,
 )
 from app.orchestration.router import (
     classify_route,
@@ -57,6 +70,12 @@ from app.services.scenario_onboarding_service import (
 )
 from app.services.session_state_update_service import (
     SessionStateUpdateService,
+)
+from app.services.session_summary_service import (
+    SessionSummaryService,
+)
+from app.services.user_context_service import (
+    UserContextService,
 )
 
 
@@ -133,6 +152,7 @@ async def load_context_node(
             user_id=user_id,
             session_id=session_id,
             content=(state["user_message"]),
+            trace_id=(state.get("trace_id")),
         )
 
         context = await context_service.build(
@@ -163,7 +183,6 @@ async def load_context_node(
         "current_message_id": (current_message.message_id),
         "base_context": context,
         "onboarding_required": (onboarding_required),
-        "guidance_level": (context.guidance_level),
         "metadata": {
             **metadata,
             "context_loaded": True,
@@ -238,7 +257,6 @@ async def scenario_onboarding_node(
         **state,
         "route": "scenario",
         "route_reason": ("Scenario onboarding is required before normal routing."),
-        "onboarding_result": result,
         "agent_response": response_text,
         "metadata": {
             **metadata,
@@ -419,15 +437,31 @@ async def execute_agent_node(
             },
         }
 
+    except (ValueError, RuntimeError) as exc:
+        # Context-target guards and repository errors must degrade
+        # into a clean error state, not an unhandled graph exception
+        # after the user message was already persisted.
+        # RepositoryError is a RuntimeError subclass.
+        return {
+            **state,
+            "error": str(exc),
+            "metadata": {
+                **metadata,
+                "selected_agent": (agent_name),
+            },
+        }
+
     return {
         **state,
         "selected_agent": (response.agent),
         "agent_response": (response.content),
         "state_update_proposal": (response.state_update_proposal),
+        "response_assessment": (response.response_assessment),
         "metadata": {
             **metadata,
             "selected_agent": (response.agent),
             "agent_called": True,
+            "response_assessed": (response.response_assessment is not None),
             "agent_metadata": (dict(response.metadata)),
             "context_target": (view.target.value),
             "context_policy_version": (view.policy_version),
@@ -483,7 +517,7 @@ async def finalize_response_node(
     if state.get("error"):
         final_response = f"I could not process the message because: {state['error']}"
     else:
-        final_response = state.get("agent_response") or state.get("model_response") or ""
+        final_response = state.get("agent_response") or ""
 
     if not final_response:
         final_response = "I could not produce a response for this request."
@@ -498,6 +532,9 @@ async def finalize_response_node(
                 user_id=state["user_id"],
                 session_id=(state["session_uuid"]),
                 content=final_response,
+                agent_name=(state.get("selected_agent")),
+                route=(state.get("route")),
+                trace_id=(state.get("trace_id")),
             )
 
             metadata["assistant_message_persisted"] = True
@@ -521,12 +558,17 @@ async def apply_state_updates_node(
     state: OrchestrationState,
     *,
     session_state_update_service: (SessionStateUpdateService),
+    user_context_service: (UserContextService),
 ) -> OrchestrationState:
     """
     Validate and persist specialist-proposed runtime state.
 
     State update failure must not discard an otherwise valid
     specialist response.
+
+    A persisted active blocker also escalates the user's guidance
+    level (see _update_hint_state_after_blocker), because graduated
+    support must follow observed blocking, not LLM judgment.
     """
 
     if state.get("error"):
@@ -566,6 +608,29 @@ async def apply_state_updates_node(
             },
         }
 
+    blocker_operations = [
+        operation
+        for operation in (result.accepted_operations)
+        if operation.field == SessionStateField.ACTIVE_BLOCKER
+    ]
+
+    if blocker_operations:
+        blocked = any(
+            operation.action == SessionStateAction.SET for operation in (blocker_operations)
+        )
+
+        try:
+            metadata["guidance_level_updated"] = await _update_hint_state_after_blocker(
+                user_context_service=(user_context_service),
+                user_id=(user_id),
+                blocked=(blocked),
+            )
+
+        except Exception as exc:
+            # Guidance escalation is best-effort: a hint-state write
+            # failure must not replace the otherwise successful turn.
+            metadata["guidance_level_error"] = str(exc)
+
     return {
         **state,
         "metadata": {
@@ -584,6 +649,225 @@ async def apply_state_updates_node(
             ],
         },
     }
+
+
+async def record_response_signal_node(
+    state: OrchestrationState,
+    *,
+    user_context_service: (UserContextService),
+) -> OrchestrationState:
+    """
+    Persist deterministic response-signal counters from the
+    specialist's assessment of the student's message (4B.9).
+
+    The raw assessment is LLM output and is never persisted. Only the
+    bounded counter movements produced by assessment_signal() touch
+    HintState. Signal persistence is best-effort: a failure is recorded
+    in metadata and must not affect the specialist response.
+    """
+
+    if state.get("error"):
+        return state
+
+    user_id = state.get("user_id")
+
+    session_id = state.get("session_uuid")
+
+    if user_id is None or session_id is None:
+        return state
+
+    metadata = dict(
+        state.get(
+            "metadata",
+            {},
+        )
+    )
+
+    assessment = state.get("response_assessment")
+
+    if assessment is None:
+        return {
+            **state,
+            "metadata": {
+                **metadata,
+                "response_signal_recorded": (False),
+                "response_reason": ("no_assessment"),
+            },
+        }
+
+    update = assessment_signal(assessment)
+
+    assessment_metadata = {
+        **metadata,
+        "response_understanding": (assessment.understanding.value),
+        "response_misconception_detected": (assessment.misconception_detected),
+    }
+
+    if update.success_delta == 0 and update.struggle_delta == 0 and not update.reset_struggle:
+        return {
+            **state,
+            "metadata": {
+                **assessment_metadata,
+                "response_signal_recorded": (False),
+                "response_reason": ("no_signal"),
+            },
+        }
+
+    try:
+        user_context = await user_context_service.get_or_create(
+            user_id=user_id,
+        )
+
+        hint_state = user_context.hint_state
+
+        hint_state.successful_independent_steps += update.success_delta
+
+        if update.reset_struggle:
+            hint_state.consecutive_unproductive_attempts = 0
+
+        else:
+            hint_state.consecutive_unproductive_attempts += update.struggle_delta
+
+        hint_state.updated_at = datetime.now(UTC)
+
+        await user_context_service.save(
+            user_id=user_id,
+            context=user_context,
+            expected_version=(user_context.version),
+        )
+
+    except Exception as exc:
+        return {
+            **state,
+            "metadata": {
+                **assessment_metadata,
+                "response_signal_recorded": (False),
+                "response_signal_error": (str(exc)),
+            },
+        }
+
+    return {
+        **state,
+        "metadata": {
+            **assessment_metadata,
+            "response_signal_recorded": (True),
+        },
+    }
+
+
+async def update_session_summary_node(
+    state: OrchestrationState,
+    *,
+    summary_service: (SessionSummaryService),
+) -> OrchestrationState:
+    """
+    Best-effort incremental session-summary update at the end of a turn.
+
+    Runs on any completed turn (specialist or fallback response); it
+    does not require an agent to have run. Scenario onboarding is not
+    wired through this node.
+
+    Summary maintenance must never fail the turn: all errors are
+    recorded in metadata and the previous summary is kept.
+    """
+
+    if state.get("error"):
+        return state
+
+    user_id = state.get("user_id")
+
+    session_id = state.get("session_uuid")
+
+    if user_id is None or session_id is None:
+        return state
+
+    metadata = dict(
+        state.get(
+            "metadata",
+            {},
+        )
+    )
+
+    try:
+        result = await summary_service.maybe_update(
+            user_id=user_id,
+            session_id=session_id,
+        )
+
+    except Exception as exc:
+        return {
+            **state,
+            "metadata": {
+                **metadata,
+                "summary_update_attempted": True,
+                "summary_update_applied": False,
+                "summary_update_error": (str(exc)),
+            },
+        }
+
+    return {
+        **state,
+        "metadata": {
+            **metadata,
+            "summary_update_attempted": True,
+            "summary_update_applied": (result.updated),
+            "summary_update_reason": (result.reason),
+            "summary_message_count": (result.covered_message_count),
+            "summary_update_error": (result.error),
+        },
+    }
+
+
+async def _update_hint_state_after_blocker(
+    *,
+    user_context_service: (UserContextService),
+    user_id: UUID,
+    blocked: bool,
+) -> str:
+    """
+    Deterministically update the persisted guidance level after a
+    blocker change was accepted into session runtime state.
+
+    SET blocker -> one step toward EXPLICIT (unless manually
+    overridden) and a longer blocked streak.
+    CLEAR blocker -> reset the blocked streak; the level itself is
+    kept so a student who needed support does not bounce back to
+    minimal guidance after the very next message.
+    """
+
+    user_context = await user_context_service.get_or_create(
+        user_id=user_id,
+    )
+
+    hint_state = user_context.hint_state
+
+    if not blocked and hint_state.consecutive_blocked_attempts == 0:
+        return hint_state.guidance_level.value
+
+    if not hint_state.manually_overridden and blocked:
+        hint_state.guidance_level = next_guidance_level(
+            hint_state.guidance_level,
+        )
+
+    if blocked:
+        hint_state.consecutive_blocked_attempts += 1
+
+        hint_state.last_change_reason = "Active blocker persisted in session runtime state."
+
+    else:
+        hint_state.consecutive_blocked_attempts = 0
+
+        hint_state.last_change_reason = "Active blocker cleared in session runtime state."
+
+    hint_state.updated_at = datetime.now(UTC)
+
+    await user_context_service.save(
+        user_id=user_id,
+        context=user_context,
+        expected_version=(user_context.version),
+    )
+
+    return hint_state.guidance_level.value
 
 
 def _render_onboarding_result(

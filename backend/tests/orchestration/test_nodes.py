@@ -12,6 +12,10 @@ from app.agents.orchestrator import (
     OrchestratorAgent,
 )
 from app.agents.scenario import ScenarioAgent
+from app.agents.schemas import (
+    StudentResponseAssessment,
+    UnderstandingLevel,
+)
 from app.context import (
     ScenarioSetupStatus,
 )
@@ -20,6 +24,9 @@ from app.context.state_updates import (
     SessionStateField,
     SessionStateUpdateOperation,
     SessionStateUpdateProposal,
+)
+from app.domain.guidance import (
+    GuidanceLevel,
 )
 from app.identity import UserIdentity
 from app.orchestration.factory import (
@@ -32,9 +39,11 @@ from app.orchestration.nodes import (
     finalize_response_node,
     load_context_node,
     prepare_input_node,
+    record_response_signal_node,
     route_request_node,
     scenario_onboarding_node,
 )
+from app.orchestration.state import OrchestrationState
 from app.services.model_service import ModelService
 from app.services.model_service.exceptions import (
     ModelGenerationError,
@@ -53,6 +62,7 @@ def create_model_service(
     semantic_route: str = ("process_coach"),
     specialist_response: str = ("Fake specialist response."),
     specialist_operations: (list[dict[str, object]] | None) = None,
+    specialist_assessment: (dict[str, object] | None) = None,
     extraction: (dict[str, object] | None) = None,
 ) -> tuple[
     ModelService,
@@ -105,14 +115,17 @@ def create_model_service(
             )
 
         else:
-            content = json.dumps(
-                {
-                    "content": (specialist_response),
-                    "state_update_proposal": {
-                        "operations": (specialist_operations or []),
-                    },
-                }
-            )
+            payload: dict[str, object] = {
+                "content": (specialist_response),
+                "state_update_proposal": {
+                    "operations": (specialist_operations or []),
+                },
+            }
+
+            if specialist_assessment is not None:
+                payload["response_assessment"] = specialist_assessment
+
+            content = json.dumps(payload)
 
         return ModelChatResponse(
             content=content,
@@ -440,11 +453,23 @@ async def test_apply_state_updates_persists_allowed_operations() -> None:
             "error": None,
         },
         session_state_update_service=(runtime.session_state_update_service),
+        user_context_service=(runtime.user_context_service),
     )
 
     assert result["metadata"]["state_update_applied"] is True
 
     assert result["metadata"]["state_update_accepted_count"] == 2
+
+    # A persisted blocker deterministically escalates the guidance level.
+    assert result["metadata"]["guidance_level_updated"] == "guided"
+
+    user_context = await runtime.user_context_service.get_required(
+        user_id=user.user_id,
+    )
+
+    assert user_context.hint_state.guidance_level == GuidanceLevel.GUIDED
+
+    assert user_context.hint_state.consecutive_blocked_attempts == 1
 
     context = await runtime.session_context_service.get_required(
         user_id=user.user_id,
@@ -487,6 +512,7 @@ async def test_apply_state_updates_rejects_disallowed_field() -> None:
             "error": None,
         },
         session_state_update_service=(runtime.session_state_update_service),
+        user_context_service=(runtime.user_context_service),
     )
 
     assert result["metadata"]["state_update_rejected_count"] == 1
@@ -500,6 +526,12 @@ async def test_state_update_failure_does_not_destroy_agent_response() -> None:
 
     service.apply = AsyncMock(side_effect=RuntimeError("Persistence failed"))
 
+    user_context_service = MagicMock()
+
+    user_context_service.get_or_create = AsyncMock()
+
+    user_context_service.save = AsyncMock()
+
     result = await apply_state_updates_node(
         {
             "user_id": uuid4(),
@@ -510,6 +542,7 @@ async def test_state_update_failure_does_not_destroy_agent_response() -> None:
             "error": None,
         },
         session_state_update_service=(service),
+        user_context_service=(user_context_service),
     )
 
     assert result["agent_response"] == ("Useful educational answer.")
@@ -564,4 +597,420 @@ async def test_finalize_response_persists_assistant_message() -> None:
 
     assert result["metadata"]["assistant_message_persisted"] is True
 
-    assert result["metadata"]["finalized"] is True
+
+def signal_state(
+    *,
+    user,
+    session,
+    assessment: (StudentResponseAssessment | None) = None,
+    error: str | None = None,
+) -> OrchestrationState:
+    state: OrchestrationState = {
+        "user_id": user.user_id,
+        "session_uuid": (session.session_id),
+        "response_assessment": (assessment),
+        "metadata": {},
+        "error": (error),
+    }
+
+    return state
+
+
+def make_assessment(
+    understanding: UnderstandingLevel,
+    *,
+    misconception: bool = False,
+) -> StudentResponseAssessment:
+    return StudentResponseAssessment(
+        understanding=understanding,
+        misconception_detected=misconception,
+        reason="Test judgment.",
+    )
+
+
+@pytest.mark.asyncio
+async def test_execute_agent_node_carries_response_assessment() -> None:
+    (
+        model_service,
+        _,
+        _,
+    ) = create_model_service(
+        specialist_assessment={
+            "understanding": ("partially_correct"),
+            "misconception_detected": (False),
+            "reason": ("Close, but misses the approval rule."),
+        },
+    )
+
+    runtime, user, session = await create_runtime_user(model_service)
+
+    base_context = await runtime.context_service.build(
+        user_id=user.user_id,
+        session_id=(session.session_id),
+        current_message=("Why do we need a purchase order?"),
+    )
+
+    registry = create_agent_registry(model_service=model_service)
+
+    result = await execute_agent_node(
+        {
+            "session_id": str(session.session_id),
+            "student_id": (user.student_id),
+            "user_message": ("Why do we need a purchase order?"),
+            "base_context": (base_context),
+            "metadata": {},
+            "error": None,
+        },
+        agent_registry=registry,
+        agent_name="process_coach",
+        context_policy_service=(runtime.context_policy_service),
+    )
+
+    assert result["selected_agent"] == "process_coach"
+
+    assessment = result["response_assessment"]
+
+    assert assessment is not None
+
+    assert assessment.understanding is UnderstandingLevel.PARTIALLY_CORRECT
+
+    assert result["metadata"]["response_assessed"] is True
+
+
+@pytest.mark.asyncio
+async def test_record_response_signal_persists_success_counter() -> None:
+    (
+        model_service,
+        _,
+        _,
+    ) = create_model_service()
+
+    runtime, user, session = await create_runtime_user(model_service)
+
+    result = await record_response_signal_node(
+        signal_state(
+            user=user,
+            session=session,
+            assessment=(
+                make_assessment(
+                    UnderstandingLevel.CORRECT,
+                )
+            ),
+        ),
+        user_context_service=(runtime.user_context_service),
+    )
+
+    assert result["metadata"]["response_signal_recorded"] is True
+
+    assert result["metadata"]["response_understanding"] == "correct"
+
+    assert result["metadata"]["response_misconception_detected"] is False
+
+    user_context = await runtime.user_context_service.get_required(
+        user_id=user.user_id,
+    )
+
+    assert user_context.hint_state.successful_independent_steps == 1
+
+    assert user_context.hint_state.consecutive_unproductive_attempts == 0
+
+
+@pytest.mark.asyncio
+async def test_record_response_signal_treats_partial_as_progress() -> None:
+    (
+        model_service,
+        _,
+        _,
+    ) = create_model_service()
+
+    runtime, user, session = await create_runtime_user(model_service)
+
+    await record_response_signal_node(
+        signal_state(
+            user=user,
+            session=session,
+            assessment=(
+                make_assessment(
+                    UnderstandingLevel.PARTIALLY_CORRECT,
+                    misconception=True,
+                )
+            ),
+        ),
+        user_context_service=(runtime.user_context_service),
+    )
+
+    user_context = await runtime.user_context_service.get_required(
+        user_id=user.user_id,
+    )
+
+    assert user_context.hint_state.successful_independent_steps == 1
+
+    assert user_context.hint_state.consecutive_unproductive_attempts == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "understanding",
+    [
+        UnderstandingLevel.INCORRECT,
+        UnderstandingLevel.OFF_TRACK,
+    ],
+)
+async def test_record_response_signal_increments_struggle(
+    understanding: UnderstandingLevel,
+) -> None:
+    (
+        model_service,
+        _,
+        _,
+    ) = create_model_service()
+
+    runtime, user, session = await create_runtime_user(model_service)
+
+    # Seed one earlier struggle so this turn proves the counter accumulates.
+    await record_response_signal_node(
+        signal_state(
+            user=user,
+            session=session,
+            assessment=(
+                make_assessment(
+                    UnderstandingLevel.OFF_TRACK,
+                )
+            ),
+        ),
+        user_context_service=(runtime.user_context_service),
+    )
+
+    result = await record_response_signal_node(
+        signal_state(
+            user=user,
+            session=session,
+            assessment=(
+                make_assessment(
+                    understanding,
+                )
+            ),
+        ),
+        user_context_service=(runtime.user_context_service),
+    )
+
+    assert result["metadata"]["response_signal_recorded"] is True
+
+    user_context = await runtime.user_context_service.get_required(
+        user_id=user.user_id,
+    )
+
+    assert user_context.hint_state.consecutive_unproductive_attempts == 2
+
+    assert user_context.hint_state.successful_independent_steps == 0
+
+
+@pytest.mark.asyncio
+async def test_record_response_signal_resets_struggle_on_success() -> None:
+    (
+        model_service,
+        _,
+        _,
+    ) = create_model_service()
+
+    runtime, user, session = await create_runtime_user(model_service)
+
+    await record_response_signal_node(
+        signal_state(
+            user=user,
+            session=session,
+            assessment=(
+                make_assessment(
+                    UnderstandingLevel.INCORRECT,
+                )
+            ),
+        ),
+        user_context_service=(runtime.user_context_service),
+    )
+
+    await record_response_signal_node(
+        signal_state(
+            user=user,
+            session=session,
+            assessment=(
+                make_assessment(
+                    UnderstandingLevel.CORRECT,
+                )
+            ),
+        ),
+        user_context_service=(runtime.user_context_service),
+    )
+
+    user_context = await runtime.user_context_service.get_required(
+        user_id=user.user_id,
+    )
+
+    assert user_context.hint_state.successful_independent_steps == 1
+
+    assert user_context.hint_state.consecutive_unproductive_attempts == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "assessment",
+    [
+        pytest.param(None, id=("none")),
+        pytest.param(
+            make_assessment(UnderstandingLevel.NOT_APPLICABLE),
+            id=("not_applicable"),
+        ),
+    ],
+)
+async def test_record_response_signal_no_op_does_not_write(
+    assessment: (StudentResponseAssessment | None),
+) -> None:
+    (
+        model_service,
+        _,
+        _,
+    ) = create_model_service()
+
+    runtime, user, session = await create_runtime_user(model_service)
+
+    before = await runtime.user_context_service.get_or_create(
+        user_id=user.user_id,
+    )
+
+    result = await record_response_signal_node(
+        signal_state(
+            user=user,
+            session=session,
+            assessment=(assessment),
+        ),
+        user_context_service=(runtime.user_context_service),
+    )
+
+    assert result["metadata"]["response_signal_recorded"] is False
+
+    assert "response_signal_error" not in result["metadata"]
+
+    after = await runtime.user_context_service.get_required(
+        user_id=user.user_id,
+    )
+
+    # No counter movement and no persistence write at all.
+    assert after.version == before.version
+
+
+@pytest.mark.asyncio
+async def test_record_response_signal_failure_is_contained() -> None:
+    (
+        model_service,
+        _,
+        _,
+    ) = create_model_service()
+
+    runtime, user, session = await create_runtime_user(model_service)
+
+    user_context_service = MagicMock()
+
+    user_context_service.get_or_create = AsyncMock()
+
+    user_context_service.save = AsyncMock(
+        side_effect=RuntimeError("Persistence failed"),
+    )
+
+    result = await record_response_signal_node(
+        signal_state(
+            user=user,
+            session=session,
+            assessment=(
+                make_assessment(
+                    UnderstandingLevel.CORRECT,
+                )
+            ),
+        ),
+        user_context_service=(user_context_service),
+    )
+
+    assert result["metadata"]["response_signal_recorded"] is False
+
+    assert result["metadata"]["response_signal_error"] == "Persistence failed"
+
+
+@pytest.mark.asyncio
+async def test_record_response_signal_skips_on_error_state() -> None:
+    (
+        model_service,
+        _,
+        _,
+    ) = create_model_service()
+
+    runtime, user, session = await create_runtime_user(model_service)
+
+    before = await runtime.user_context_service.get_or_create(
+        user_id=user.user_id,
+    )
+
+    result = await record_response_signal_node(
+        signal_state(
+            user=user,
+            session=session,
+            assessment=(
+                make_assessment(
+                    UnderstandingLevel.CORRECT,
+                )
+            ),
+            error=("Something failed earlier."),
+        ),
+        user_context_service=(runtime.user_context_service),
+    )
+
+    assert result["error"] == ("Something failed earlier.")
+
+    after = await runtime.user_context_service.get_required(
+        user_id=user.user_id,
+    )
+
+    assert after.version == before.version
+
+
+@pytest.mark.asyncio
+async def test_record_response_signal_cross_user_isolation() -> None:
+    (
+        model_service,
+        _,
+        _,
+    ) = create_model_service()
+
+    runtime, user_a, session_a = await create_runtime_user(model_service)
+
+    user_b = await runtime.repositories.identities.create(
+        UserIdentity(student_id="K99999"),
+    )
+
+    session_b = await runtime.conversation_service.create_session(
+        user_id=user_b.user_id,
+    )
+
+    # A struggling signal recorded for user B...
+    await record_response_signal_node(
+        signal_state(
+            user=user_b,
+            session=session_b,
+            assessment=(
+                make_assessment(
+                    UnderstandingLevel.OFF_TRACK,
+                )
+            ),
+        ),
+        user_context_service=(runtime.user_context_service),
+    )
+
+    # ...must not touch user A's hint state.
+    context_a = await runtime.user_context_service.get_or_create(
+        user_id=user_a.user_id,
+    )
+
+    context_b = await runtime.user_context_service.get_required(
+        user_id=user_b.user_id,
+    )
+
+    assert context_a.hint_state.consecutive_unproductive_attempts == 0
+
+    assert context_b.hint_state.consecutive_unproductive_attempts == 1

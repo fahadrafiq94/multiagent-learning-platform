@@ -10,6 +10,7 @@ from app.agents.exceptions import (
 )
 from app.agents.policies import (
     AP_PLUS_NAVIGATOR_GUIDANCE,
+    RESPONSE_ASSESSMENT_INSTRUCTIONS,
 )
 from app.agents.schemas import (
     AgentName,
@@ -18,7 +19,7 @@ from app.agents.schemas import (
     SpecialistAgentOutput,
 )
 from app.agents.state_update_prompt import (
-    STATE_UPDATE_PROPOSAL_INSTRUCTIONS,
+    state_update_proposal_instructions,
 )
 from app.context.agent_views import (
     ContextTarget,
@@ -126,7 +127,9 @@ class APPlusNavigatorAgent:
             f"{request.guidance_level.value}\n"
             f"{guidance}"
             "\n\n"
-            f"{STATE_UPDATE_PROPOSAL_INSTRUCTIONS}"
+            f"{state_update_proposal_instructions(self.name)}"
+            "\n\n"
+            f"{RESPONSE_ASSESSMENT_INSTRUCTIONS}"
         )
 
         context_text = context_view_to_prompt_text(request.context)
@@ -187,6 +190,7 @@ class APPlusNavigatorAgent:
             agent=self.name,
             content=output.content,
             state_update_proposal=(output.state_update_proposal),
+            response_assessment=(output.response_assessment),
             metadata={
                 "model": response.model,
                 "model_provider": (response.provider),
@@ -194,5 +198,6 @@ class APPlusNavigatorAgent:
                 "guidance_mode": ("system_navigation"),
                 "guidance_level": (request.guidance_level.value),
                 "state_update_operation_count": (len(output.state_update_proposal.operations)),
+                "response_assessed": (output.response_assessment is not None),
             },
         )

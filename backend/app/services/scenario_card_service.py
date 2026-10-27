@@ -20,16 +20,13 @@ from app.repositories import (
 from app.services.user_context_service import (
     UserContextService,
 )
+from app.utils.text import (
+    text_comparison_key as _normalized_text,
+)
 
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
-
-
-def _normalized_text(
-    value: str,
-) -> str:
-    return " ".join(value.split()).casefold()
 
 
 class ScenarioCardService:

@@ -810,3 +810,289 @@ async def test_budget_keeps_newest_history_and_reports_dropped_messages() -> Non
     assert metadata.estimated_input_tokens is not None
     assert metadata.input_token_budget is not None
     assert metadata.estimated_input_tokens <= metadata.input_token_budget
+
+
+@pytest.mark.asyncio
+async def test_build_includes_persisted_session_summary() -> None:
+    from app.context import SessionSummary
+
+    repositories, conversations, users, sessions, _ = create_services()
+    user, session = await create_user_and_session(
+        repositories=repositories,
+        conversation_service=conversations,
+    )
+    service = ContextService(
+        user_context_service=users,
+        session_context_service=sessions,
+        conversation_service=conversations,
+    )
+
+    context = await sessions.get_required(
+        user_id=user.user_id,
+        session_id=session.session_id,
+    )
+    context.summary = SessionSummary(
+        user_id=user.user_id,
+        session_id=session.session_id,
+        overview=("Earlier conversation compacted."),
+        decisions=[("Student chose an AP+ scenario.")],
+        source_message_count=4,
+    )
+    await sessions.save(
+        user_id=user.user_id,
+        session_id=session.session_id,
+        context=context,
+        expected_version=context.version,
+    )
+
+    agent_context = await service.build(
+        user_id=user.user_id,
+        session_id=session.session_id,
+        current_message="What was our decision again?",
+    )
+
+    assert agent_context.session_summary is not None
+    assert agent_context.session_summary.source_message_count == 4
+    metadata = agent_context.metadata
+    assert metadata.summary_included is True
+    assert "session_summary" in metadata.included_sections
+
+
+@pytest.mark.asyncio
+async def test_build_counts_summary_toward_essential_budget() -> None:
+    from app.context import SessionSummary
+    from app.context.budget import ContextBudgetPolicy, ContextBudgetService
+    from app.context.token_estimator import ApproximateTokenEstimator
+    from app.services.context_service import ContextBudgetExceededError
+
+    repositories, conversations, users, sessions, _ = create_services()
+    user, session = await create_user_and_session(
+        repositories=repositories,
+        conversation_service=conversations,
+    )
+    service = ContextService(
+        user_context_service=users,
+        session_context_service=sessions,
+        conversation_service=conversations,
+        budget_service=ContextBudgetService(
+            estimator=ApproximateTokenEstimator(
+                characters_per_token=1,
+                message_overhead_tokens=0,
+            ),
+            policy=ContextBudgetPolicy(
+                max_context_tokens=300,
+                reserved_output_tokens=100,
+                max_recent_messages=3,
+            ),
+        ),
+    )
+
+    context = await sessions.get_required(
+        user_id=user.user_id,
+        session_id=session.session_id,
+    )
+    context.summary = SessionSummary(
+        user_id=user.user_id,
+        session_id=session.session_id,
+        overview=("x" * 1500),
+        source_message_count=4,
+    )
+    await sessions.save(
+        user_id=user.user_id,
+        session_id=session.session_id,
+        context=context,
+        expected_version=context.version,
+    )
+
+    with pytest.raises(ContextBudgetExceededError):
+        await service.build(
+            user_id=user.user_id,
+            session_id=session.session_id,
+            current_message="Short question",
+        )
+
+
+async def set_hint_state(
+    user_context_service,
+    user,
+    **kwargs: object,
+) -> None:
+    user_context = await user_context_service.get_or_create(
+        user_id=user.user_id,
+    )
+
+    hint_state = user_context.hint_state
+
+    for key, value in kwargs.items():
+        setattr(hint_state, key, value)
+
+    await user_context_service.save(
+        user_id=user.user_id,
+        context=user_context,
+        expected_version=(user_context.version),
+    )
+
+
+@pytest.mark.asyncio
+async def test_build_selects_guidance_baseline_for_fresh_user() -> None:
+    (
+        repositories,
+        conversation_service,
+        _,
+        _,
+        context_service,
+    ) = create_services()
+
+    user, session = await create_user_and_session(
+        repositories=repositories,
+        conversation_service=(conversation_service),
+    )
+
+    context = await context_service.build(
+        user_id=user.user_id,
+        session_id=session.session_id,
+        current_message=("What should I do next?"),
+    )
+
+    assert context.guidance_level == GuidanceLevel.MINIMAL
+
+    assert context.metadata.guidance_reason == "baseline"
+
+
+@pytest.mark.asyncio
+async def test_build_escalates_on_repeated_struggle() -> None:
+    (
+        repositories,
+        conversation_service,
+        user_context_service,
+        _,
+        context_service,
+    ) = create_services()
+
+    user, session = await create_user_and_session(
+        repositories=repositories,
+        conversation_service=(conversation_service),
+    )
+
+    await set_hint_state(
+        user_context_service,
+        user,
+        consecutive_unproductive_attempts=3,
+    )
+
+    context = await context_service.build(
+        user_id=user.user_id,
+        session_id=session.session_id,
+        current_message=("Why do we need a purchase order?"),
+    )
+
+    assert context.guidance_level == GuidanceLevel.EXPLICIT
+
+    assert context.metadata.guidance_reason == "repeated_struggle"
+
+
+@pytest.mark.asyncio
+async def test_build_floors_level_on_active_blocker() -> None:
+    (
+        repositories,
+        conversation_service,
+        user_context_service,
+        session_context_service,
+        context_service,
+    ) = create_services()
+
+    user, session = await create_user_and_session(
+        repositories=repositories,
+        conversation_service=(conversation_service),
+    )
+
+    await set_hint_state(
+        user_context_service,
+        user,
+        consecutive_blocked_attempts=2,
+    )
+
+    await session_context_service.update(
+        user_id=user.user_id,
+        session_id=session.session_id,
+        changes=SessionContextUpdate(
+            active_blocker=("Supplier criteria are unclear."),
+        ),
+    )
+
+    context = await context_service.build(
+        user_id=user.user_id,
+        session_id=session.session_id,
+        current_message=("Why do I need these criteria?"),
+    )
+
+    assert context.guidance_level == GuidanceLevel.DIRECTED
+
+    assert context.metadata.guidance_reason == "active_blocker"
+
+
+@pytest.mark.asyncio
+async def test_build_de_escalates_on_productive_reasoning() -> None:
+    (
+        repositories,
+        conversation_service,
+        user_context_service,
+        _,
+        context_service,
+    ) = create_services()
+
+    user, session = await create_user_and_session(
+        repositories=repositories,
+        conversation_service=(conversation_service),
+    )
+
+    await set_hint_state(
+        user_context_service,
+        user,
+        guidance_level=(GuidanceLevel.EXPLICIT),
+        successful_independent_steps=2,
+    )
+
+    context = await context_service.build(
+        user_id=user.user_id,
+        session_id=session.session_id,
+        current_message=("How should I verify this?"),
+    )
+
+    assert context.guidance_level == GuidanceLevel.DIRECTED
+
+    assert context.metadata.guidance_reason == "productive_reasoning"
+
+
+@pytest.mark.asyncio
+async def test_build_respects_manual_guidance_override() -> None:
+    (
+        repositories,
+        conversation_service,
+        user_context_service,
+        _,
+        context_service,
+    ) = create_services()
+
+    user, session = await create_user_and_session(
+        repositories=repositories,
+        conversation_service=(conversation_service),
+    )
+
+    await set_hint_state(
+        user_context_service,
+        user,
+        guidance_level=(GuidanceLevel.MINIMAL),
+        manually_overridden=True,
+        consecutive_unproductive_attempts=3,
+    )
+
+    context = await context_service.build(
+        user_id=user.user_id,
+        session_id=session.session_id,
+        current_message=("Why do we need a purchase order?"),
+    )
+
+    assert context.guidance_level == GuidanceLevel.MINIMAL
+
+    assert context.metadata.guidance_reason == "manual_override"

@@ -6,6 +6,7 @@ from uuid import UUID
 from app.context import (
     ScenarioDraft,
     ScenarioDraftAssessment,
+    ScenarioDraftFact,
     ScenarioRequiredField,
     ScenarioSetupStatus,
 )
@@ -14,6 +15,9 @@ from app.services.scenario_card_service import (
 )
 from app.services.session_context_service import (
     SessionContextService,
+)
+from app.utils.text import (
+    text_comparison_key,
 )
 
 
@@ -91,6 +95,94 @@ class ScenarioOnboardingService:
 
         return saved.scenario_setup_status
 
+    @staticmethod
+    def _merge_drafts(
+        *,
+        current: ScenarioDraft | None,
+        incoming: ScenarioDraft,
+    ) -> ScenarioDraft:
+        if current is None:
+            return incoming.model_copy(deep=True)
+
+        merged = current.model_copy(deep=True)
+
+        if incoming.company_context is not None:
+            merged.company_context = incoming.company_context
+
+        if incoming.learner_role is not None:
+            merged.learner_role = incoming.learner_role
+
+        if incoming.business_problem is not None:
+            merged.business_problem = incoming.business_problem
+
+        merged.business_goals = ScenarioOnboardingService._merge_unique_strings(
+            current=(merged.business_goals),
+            incoming=(incoming.business_goals),
+        )
+
+        merged.constraints = ScenarioOnboardingService._merge_unique_strings(
+            current=(merged.constraints),
+            incoming=(incoming.constraints),
+        )
+
+        merged.proposed_facts = ScenarioOnboardingService._merge_unique_facts(
+            current=(merged.proposed_facts),
+            incoming=(incoming.proposed_facts),
+        )
+
+        merged.source_message_ids = [
+            *merged.source_message_ids,
+            *[
+                message_id
+                for message_id in incoming.source_message_ids
+                if message_id not in merged.source_message_ids
+            ],
+        ]
+
+        return merged
+
+    @staticmethod
+    def _merge_unique_strings(
+        *,
+        current: list[str],
+        incoming: list[str],
+    ) -> list[str]:
+        merged = list(current)
+
+        seen = {text_comparison_key(item) for item in current}
+
+        for item in incoming:
+            key = text_comparison_key(item)
+
+            if key in seen:
+                continue
+
+            seen.add(key)
+            merged.append(item)
+
+        return merged
+
+    @staticmethod
+    def _merge_unique_facts(
+        *,
+        current: list[ScenarioDraftFact],
+        incoming: list[ScenarioDraftFact],
+    ) -> list[ScenarioDraftFact]:
+        merged = [fact.model_copy(deep=True) for fact in current]
+
+        seen = {text_comparison_key(fact.fact) for fact in current}
+
+        for fact in incoming:
+            key = text_comparison_key(fact.fact)
+
+            if key in seen:
+                continue
+
+            seen.add(key)
+            merged.append(fact.model_copy(deep=True))
+
+        return merged
+
     def assess(
         self,
         draft: ScenarioDraft,
@@ -147,11 +239,24 @@ class ScenarioOnboardingService:
         if context.scenario_setup_status == ScenarioSetupStatus.CONFIRMED:
             raise ValueError("Scenario onboarding is already confirmed")
 
-        assessment = self.assess(draft)
+        # The incoming draft was merged against the session state as
+        # it looked at the start of this turn. A concurrent turn may
+        # have persisted a newer draft since, so merge the incoming
+        # draft into the currently persisted one instead of replacing
+        # it wholesale: scalars prefer the newer explicit value,
+        # lists are unioned. Sequential behavior is unchanged because
+        # in that case the persisted draft is exactly the incoming
+        # draft's base.
+        merged = self._merge_drafts(
+            current=(context.scenario_draft),
+            incoming=draft,
+        )
 
-        draft.updated_at = _utc_now()
+        assessment = self.assess(merged)
 
-        context.scenario_draft = draft
+        merged.updated_at = _utc_now()
+
+        context.scenario_draft = merged
 
         if assessment.ready_for_review:
             context.scenario_setup_status = ScenarioSetupStatus.REVIEWING

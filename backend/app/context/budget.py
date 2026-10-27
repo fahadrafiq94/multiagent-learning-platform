@@ -137,10 +137,28 @@ class ContextBudgetService:
         messages: Sequence[TMessage],
         essential_texts: Sequence[str],
         policy: (ContextBudgetPolicy | None) = None,
+        extra_essential_tokens: int = 0,
     ) -> ContextBudgetResult[TMessage]:
+        """
+        Select the recent-history suffix that fits the input budget.
+
+        extra_essential_tokens reserves budget for request-level
+        prompt content that is not part of the supplied context
+        (e.g. the selected agent's system prompt and guidance
+        policy) so history selection does not assume it costs zero.
+        """
+
+        if extra_essential_tokens < 0:
+            raise ValueError("extra_essential_tokens must not be negative.")
+
         active_policy = policy or self._policy
 
-        essential_tokens = self._estimator.estimate_texts(list(essential_texts))
+        essential_tokens = (
+            self._estimator.estimate_texts(
+                list(essential_texts),
+            )
+            + extra_essential_tokens
+        )
 
         input_budget = active_policy.input_token_budget
 

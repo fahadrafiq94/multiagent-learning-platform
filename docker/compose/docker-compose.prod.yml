@@ -4,6 +4,7 @@ services:
       context: ../..
       dockerfile: docker/backend/Dockerfile
 
+    # Created from backend/.env.production.example (git-ignored).
     env_file:
       - ../../backend/.env.production
 

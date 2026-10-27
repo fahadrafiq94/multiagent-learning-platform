@@ -59,6 +59,9 @@ from app.services.session_context_service import (
 from app.services.session_state_update_service import (
     SessionStateUpdateService,
 )
+from app.services.session_summary_service import (
+    SessionSummaryService,
+)
 from app.services.user_context_service import (
     UserContextService,
 )
@@ -84,6 +87,8 @@ class OrchestrationRuntime:
     session_context_service: SessionContextService
 
     session_state_update_service: SessionStateUpdateService
+
+    session_summary_service: SessionSummaryService
 
     scenario_card_service: ScenarioCardService
 
@@ -152,9 +157,22 @@ def build_orchestration_runtime(
         session_context_service=session_context_service,
         conversation_service=conversation_service,
         budget_service=context_budget_service,
+        agent_prompt_reserve_tokens=(settings.context_reserved_agent_prompt_tokens),
     )
 
     context_policy_service = AgentContextPolicyService()
+
+    session_summary_service = SessionSummaryService(
+        conversation_service=(conversation_service),
+        session_context_service=(session_context_service),
+        model_service=(model_service),
+        recent_window=(settings.context_max_recent_messages),
+        min_new_messages=(settings.context_summary_min_new_messages),
+        max_items_per_list=(settings.context_summary_max_items_per_list),
+        max_overview_chars=(settings.context_summary_max_overview_chars),
+        # Empty env value means "use the default chat model".
+        model=(settings.summary_model or None),
+    )
 
     scenario_agent = ScenarioAgent(
         model_service=model_service,
@@ -180,9 +198,11 @@ def build_orchestration_runtime(
         conversation_service=(conversation_service),
         context_service=(context_service),
         session_state_update_service=(session_state_update_service),
+        session_summary_service=(session_summary_service),
         context_policy_service=(context_policy_service),
         onboarding_service=(scenario_onboarding_service),
         onboarding_interaction_service=(interaction_service),
+        user_context_service=(user_context_service),
     )
 
     orchestration_service = OrchestrationService(
@@ -197,6 +217,7 @@ def build_orchestration_runtime(
         user_context_service=(user_context_service),
         session_context_service=(session_context_service),
         session_state_update_service=(session_state_update_service),
+        session_summary_service=(session_summary_service),
         scenario_card_service=(scenario_card_service),
         scenario_onboarding_service=(scenario_onboarding_service),
         context_service=(context_service),

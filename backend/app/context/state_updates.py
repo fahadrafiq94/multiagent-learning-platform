@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import ClassVar
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    ValidationInfo,
     field_validator,
     model_validator,
 )
@@ -42,6 +44,18 @@ class SessionStateUpdateOperation(BaseModel):
     It does not mutate persistent state.
     """
 
+    # Upper bound per target field. These mirror the persistent
+    # SessionContext field constraints (ShortText/MediumText/LongText)
+    # so an oversized proposal is rejected per-operation instead of
+    # failing the whole batch at persistence time.
+    _FIELD_VALUE_MAX_LENGTH: ClassVar[dict[SessionStateField, int]] = {
+        SessionStateField.CURRENT_OBJECTIVE: 4_000,
+        SessionStateField.CURRENT_STEP_ID: 255,
+        SessionStateField.CURRENT_PROCESS_PHASE: 255,
+        SessionStateField.ACTIVE_BLOCKER: 4_000,
+        SessionStateField.UNRESOLVED_QUESTIONS: 1_000,
+    }
+
     model_config = ConfigDict(extra="forbid")
 
     field: SessionStateField
@@ -60,13 +74,28 @@ class SessionStateUpdateOperation(BaseModel):
     def normalize_value(
         cls,
         value: str | None,
+        info: ValidationInfo,
     ) -> str | None:
         if value is None:
             return None
 
         normalized = " ".join(value.split())
 
-        return normalized or None
+        if not normalized:
+            return None
+
+        field = info.data.get("field")
+
+        if isinstance(field, SessionStateField):
+            max_length = cls._FIELD_VALUE_MAX_LENGTH[field]
+
+            if len(normalized) > max_length:
+                raise ValueError(
+                    f"Value for {field.value} exceeds the "
+                    f"target field limit of {max_length} characters."
+                )
+
+        return normalized
 
     @field_validator("reason")
     @classmethod
@@ -74,7 +103,12 @@ class SessionStateUpdateOperation(BaseModel):
         cls,
         value: str,
     ) -> str:
-        return " ".join(value.split())
+        normalized = " ".join(value.split())
+
+        if not normalized:
+            raise ValueError("Reason must not be blank.")
+
+        return normalized
 
     @model_validator(mode="after")
     def validate_operation(

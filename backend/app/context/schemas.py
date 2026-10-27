@@ -147,6 +147,9 @@ class ScenarioUpdateCandidate(ContextModel):
       confirmation
 
     Only explicit validation moves a candidate into ScenarioCard.
+
+    The value length limit follows the target ScenarioCard field so
+    a valid candidate can always be confirmed.
     """
 
     candidate_id: UUID = Field(
@@ -168,6 +171,20 @@ class ScenarioUpdateCandidate(ContextModel):
     created_at: datetime = Field(
         default_factory=utc_now,
     )
+
+    @model_validator(mode="after")
+    def validate_value_fits_target(
+        self,
+    ) -> ScenarioUpdateCandidate:
+        max_length = _CANDIDATE_VALUE_MAX_LENGTH[self.target]
+
+        if len(self.value) > max_length:
+            raise ValueError(
+                f"Value for {self.target.value} exceeds the "
+                f"target field limit of {max_length} characters."
+            )
+
+        return self
 
 
 class ScenarioCard(ContextModel):
@@ -308,6 +325,14 @@ class HintState(ContextModel):
     )
 
     successful_independent_steps: int = Field(
+        default=0,
+        ge=0,
+    )
+
+    # Consecutive judged-unproductive student responses
+    # (incorrect / off_track), written deterministically from the
+    # specialist's response assessment (Sprint 4B.9).
+    consecutive_unproductive_attempts: int = Field(
         default=0,
         ge=0,
     )
@@ -651,6 +676,11 @@ class ContextMetadata(ContextModel):
 
     summary_included: bool = False
 
+    # Why the selected guidance level was chosen by the deterministic
+    # policy (Sprint 4B.9): baseline, manual_override, active_blocker,
+    # repeated_struggle, or productive_reasoning.
+    guidance_reason: ShortText | None = None
+
     knowledge_chunk_count: int = Field(
         default=0,
         ge=0,
@@ -813,6 +843,22 @@ class ScenarioCardTarget(StrEnum):
     BUSINESS_GOAL = "business_goal"
     CONSTRAINT = "constraint"
     CONFIRMED_FACT = "confirmed_fact"
+
+
+# Length limits for ScenarioUpdateCandidate.value, following the
+# persistent ScenarioCard field constraints so a valid candidate can
+# always be confirmed.
+_CANDIDATE_VALUE_MAX_LENGTH: dict[
+    ScenarioCardTarget,
+    int,
+] = {
+    ScenarioCardTarget.COMPANY_CONTEXT: 4_000,
+    ScenarioCardTarget.LEARNER_ROLE: 255,
+    ScenarioCardTarget.BUSINESS_PROBLEM: 4_000,
+    ScenarioCardTarget.BUSINESS_GOAL: 1_000,
+    ScenarioCardTarget.CONSTRAINT: 1_000,
+    ScenarioCardTarget.CONFIRMED_FACT: 4_000,
+}
 
 
 class ScenarioCandidateSource(StrEnum):

@@ -5,6 +5,11 @@ __pycache__/
 
 # Environment
 .env
+.env.production
+.env.local
+
+# Generated reports / scratch output
+backend/reports/
 
 # IDE
 .vscode/

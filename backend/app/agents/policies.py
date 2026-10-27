@@ -82,6 +82,25 @@ SCENARIO_GUIDANCE: dict[
 }
 
 
+RESPONSE_ASSESSMENT_INSTRUCTIONS = """\
+RESPONSE ASSESSMENT (part of your structured output):
+In addition to your answer, assess the student's CURRENT message — \
+not your own answer — and include it as `response_assessment`:
+
+- understanding: exactly one of "correct", "partially_correct", \
+"incorrect", "off_track", or "not_applicable";
+  use "not_applicable" when the message contains no assessable \
+learning content (greeting, thanks, pure navigation request);
+- misconception_detected: true when the message shows an idea the \
+student likely holds that is likely wrong;
+- reason: one short sentence.
+
+Judge the student's message on its own merits against the scenario, \
+the current process context, and the help you are giving. Do not \
+grade it by how well it agrees with your reply.
+"""
+
+
 AP_PLUS_NAVIGATOR_GUIDANCE: dict[
     GuidanceLevel,
     str,
