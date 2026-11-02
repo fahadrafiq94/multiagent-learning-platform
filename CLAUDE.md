@@ -1400,8 +1400,7 @@ The target operational model is containerized. After every completed sprint:
 
 The sprint is not complete merely because the code runs directly on the host.
 
-### 23.11 Sprint completion and merge gate
-
+### 23.11 Sprint completion
 A sprint can be marked complete only when all applicable items below are satisfied:
 
 ```text
@@ -1427,9 +1426,7 @@ A sprint can be marked complete only when all applicable items below are satisfi
 [ ] no known sprint-blocking runtime errors remain
 ```
 
-Only after this gate is green should `feature/sprint-<number>` be merged into `main`.
-
-After merge, verify `main` again as the known-good runnable branch.
+Only after this gate is green the sprint is completed. 
 
 ### 23.12 Architecture/context maintenance
 
@@ -1473,6 +1470,21 @@ When modifying factory composition for a new dependency such as `ContextBudgetSe
 Prefer adding dependency construction inside the existing composition root over replacing the composition root with a new incompatible API.
 
 ---
+
+## Web Search and Context Management
+
+- Use SearXNG only when current information is needed.
+- Prefer local files when working on existing code.
+- Make at most 2 web searches per task.
+- Retrieve at most 5 results per search, ideally 3.
+- Read at most 2 full webpages per task.
+- Never fetch entire pages without a specific reason.
+- Extract relevant facts and source URLs.
+- Avoid repeating full search results.
+- Save substantial research to docs/research-notes.md
+  in 500 words or fewer.
+- Reuse research notes instead of repeating searches.
+- Ask before expanding research beyond these limits.
 
 ## 26. Phase 1 Non-Goals / Deferred Work
 
