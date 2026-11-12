@@ -20,6 +20,7 @@ from app.main import app
 from app.orchestration.factory import (
     build_orchestration_runtime,
 )
+from app.orchestration.schemas import OrchestrationRequest
 from app.services.model_service import ModelService
 from app.services.model_service.schemas import (
     ModelChatRequest,
@@ -90,6 +91,11 @@ def create_model_service(
                 {
                     "route": route,
                     "reason": ("The current request matches this route."),
+                    "current_step": (
+                        {"action": "set", "step_id": "8", "source_quote": "I am at step 8 in AP+"}
+                        if request.messages[-1].content.startswith("I am at step 8 in AP+")
+                        else {"action": "unchanged", "step_id": None, "source_quote": None}
+                    ),
                 }
             )
 
@@ -158,6 +164,14 @@ async def confirm_scenario(
 def create_client(
     runtime,
 ) -> httpx.AsyncClient:
+    from app.api.dependencies import authorize_invocation
+
+    async def authorized_test_user(request: OrchestrationRequest):
+        return await runtime.repositories.identities.get_by_student_id(
+            student_id=request.student_id
+        )
+
+    app.dependency_overrides[authorize_invocation] = authorized_test_user
     app.dependency_overrides[orchestration_routes.get_orchestration_service] = lambda: (
         runtime.orchestration_service
     )

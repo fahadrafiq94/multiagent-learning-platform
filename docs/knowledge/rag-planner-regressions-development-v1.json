@@ -1,0 +1,49 @@
+{
+  "version": "consumed-v1-planner-regressions-development-1",
+  "frozen_before_execution": true,
+  "collection_id": "89c7a7b4-70d8-58d4-913b-7cde21bf3a40",
+  "revision_id": "78085670-9cba-5d2d-8de2-df3d2db092af",
+  "access_domain": "course:ap40",
+  "namespace": "ap40",
+  "generic_document_id": "199351e7-83c7-4dd4-9694-e741d6be0093",
+  "generic_text": "Training archive policy for the fictional Elm classroom.\nExported practice files are retained for fourteen days.\nPersonal scratch notes are deleted after seven days.\nA mentor may request a practice-file extension before the fourteen-day deadline.\nThis policy does not specify encryption keys, server ports or student passwords.\nThis is an isolated evaluation document, not an APplus course instruction.",
+  "recall_target": 0.9,
+  "rejection_target": 0.9,
+  "planner_target": 0.9,
+  "cases": [
+    {
+      "case_id": "dev-regression-held-scenario-fiscal",
+      "split": "development",
+      "specialist": "scenario",
+      "question": "How does establishing a fiscal year in AP40-03 fit into setting up the business exercise?",
+      "expected_references": [
+        "AP40-03"
+      ],
+      "allowed_actions": [
+        "document_search",
+        "metadata_lookup"
+      ],
+      "expected_statuses": [
+        "found"
+      ],
+      "guidance_probe": false
+    },
+    {
+      "case_id": "dev-regression-held-generic-no-key",
+      "split": "development",
+      "corpus": "generic",
+      "specialist": "scenario",
+      "question": "What encryption key protects the Elm archive?",
+      "answerable": false,
+      "allowed_actions": [
+        "document_search",
+        "clarify"
+      ],
+      "expected_statuses": [
+        "no_evidence",
+        "clarify"
+      ],
+      "guidance_probe": false
+    }
+  ]
+}

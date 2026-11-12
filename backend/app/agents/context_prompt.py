@@ -18,6 +18,7 @@ _PRIVATE_CONTEXT_KEYS = frozenset(
         "policy_version",
         "included_sections",
         "current_message",
+        "grounding",
     }
 )
 

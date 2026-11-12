@@ -1,5 +1,6 @@
 DEV_COMPOSE := docker compose -f ./docker/compose/docker-compose.dev.yml
 PROD_COMPOSE := docker compose -f ./docker/compose/docker-compose.prod.yml
+KNOWLEDGE_INFRA := python backend/scripts/knowledge_infra.py
 
 
 .PHONY: \
@@ -27,7 +28,13 @@ PROD_COMPOSE := docker compose -f ./docker/compose/docker-compose.prod.yml
 	concurrency-smoke \
 	export-orchestration-graph \
 	export-runtime-workflow \
-	export-graphs
+	export-graphs \
+	knowledge-init \
+	knowledge-config \
+	knowledge-up \
+	knowledge-status \
+	knowledge-smoke \
+	knowledge-smoke-persistence
 
 
 # ---------------------------------------------------
@@ -110,6 +117,29 @@ ollama-pull:
 
 model-health:
 	curl --fail http://localhost:8000/model/health
+
+# Optional knowledge infrastructure; does not recreate backend/Ollama.
+knowledge-init:
+	$(KNOWLEDGE_INFRA) init
+
+knowledge-config:
+	$(KNOWLEDGE_INFRA) config
+
+knowledge-up:
+	$(KNOWLEDGE_INFRA) start
+
+knowledge-status:
+	$(KNOWLEDGE_INFRA) status
+
+knowledge-smoke:
+	$(KNOWLEDGE_INFRA) smoke
+
+knowledge-smoke-persistence:
+	$(KNOWLEDGE_INFRA) smoke --restart-postgres
+
+.PHONY: knowledge-import
+knowledge-import:
+	$(KNOWLEDGE_INFRA) import
 
 
 docker-health:

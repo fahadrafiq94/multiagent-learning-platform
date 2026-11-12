@@ -1,0 +1,5 @@
+# Keep detected text files on LF across Windows, Linux and GitHub CI.
+* text=auto eol=lf
+
+# Preserve source PDFs as binary data without line-ending conversion.
+*.pdf binary

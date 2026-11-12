@@ -1,0 +1,27 @@
+{
+  "version": "checkpoint-7-smoke-v1",
+  "frozen_before_model_evaluation": true,
+  "targets": {
+    "valid_semantic_plan_fraction": 0.90,
+    "expected_action_fraction": 0.90,
+    "course_evidence_misses": 0,
+    "conversation_searches": 0,
+    "unauthorized_evidence": 0,
+    "latency": "report actual cold/warm latency; no fixed CPU promise"
+  },
+  "cases": [
+    {"id":"greeting","question":"Hello!","specialist":"scenario","expected_actions":["skip"],"expected_status":"skipped"},
+    {"id":"thanks_with_step","question":"Thanks, I understand AP40-02 now.","specialist":"process_coach","current_step_id":"AP40-02","expected_actions":["skip"],"expected_status":"skipped"},
+    {"id":"state_only","question":"Which step am I currently working on?","specialist":"process_coach","current_step_id":"AP40-02","expected_actions":["skip"],"expected_status":"skipped"},
+    {"id":"ambiguous_target","question":"Can you show me where to enter that?","specialist":"ap_plus_navigator","expected_actions":["clarify"],"expected_status":"clarify"},
+    {"id":"exact_metadata","question":"What is the next step after AP40-02?","specialist":"process_coach","expected_actions":["metadata_lookup"],"expected_status":"found","expected_any_reference":["AP40-02"]},
+    {"id":"address_navigation","question":"Where do I assign an address in APplus?","specialist":"ap_plus_navigator","clear_course_query":true,"expected_actions":["document_search"],"expected_status":"found","expected_any_reference":["AP40-02"]},
+    {"id":"supplier_dependency","question":"Why do I need a supplier before maintaining item supplier master data?","specialist":"process_coach","current_step_id":"AP40-02","clear_course_query":true,"expected_actions":["document_search"],"expected_status":"found","expected_any_reference":["AP40-07","AP40-10"]},
+    {"id":"invoice_dependency","question":"Why must goods issue be posted before creating an invoice?","specialist":"process_coach","current_step_id":"AP40-02","clear_course_query":true,"expected_actions":["document_search"],"expected_status":"found","expected_any_reference":["AP40-38","AP40-39"]},
+    {"id":"reuse_invoice","question":"Why must goods issue be posted before creating an invoice?","specialist":"process_coach","seed_query":"Why must goods issue be posted before creating an invoice?","expected_actions":["reuse_evidence"],"expected_status":"found","expected_any_reference":["AP40-39"]},
+    {"id":"combined_metadata_and_search","question":"For AP40-02 give its next step, and explain why goods issue must be posted before invoicing.","specialist":"process_coach","clear_course_query":true,"expected_all_actions":["metadata_lookup","document_search"],"expected_status":"found","expected_all_references":["AP40-02","AP40-39"]},
+    {"id":"cross_step","question":"Compare AP40-07 and AP40-08.","specialist":"process_coach","current_step_id":"AP40-02","clear_course_query":true,"expected_actions":["metadata_lookup","document_search"],"expected_status":"found","expected_all_references":["AP40-07","AP40-08"]},
+    {"id":"irrelevant_old_evidence","question":"Why must goods issue be posted before creating an invoice?","specialist":"process_coach","seed_query":"Where do I assign an address in APplus?","clear_course_query":true,"expected_actions":["document_search"],"expected_status":"found","expected_any_reference":["AP40-39"]},
+    {"id":"unknown_identifier","question":"AP40-9999","specialist":"process_coach","clear_course_query":true,"expected_actions":["metadata_lookup","document_search"],"expected_status":"no_evidence"}
+  ]
+}

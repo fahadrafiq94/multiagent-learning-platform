@@ -23,8 +23,17 @@ Rules:
 
 **Project name:** FREDi — Agentic AI Learning Environment for AP+ ERP Education  
 **Current phase:** Phase 1 — local/API-first multi-agent learning prototype  
-**Current engineering sprint:** Sprint 4 — all 4B substeps complete; Sprint 4 completion gate next (security review, docs, README, Docker, merge)  
-**Current sub-step:** none — 4B.11 Multi-user/concurrency validation just completed  
+**Current engineering sprint:** Sprint 5 - RAG / Knowledge Grounding (implementation close-out; acceptance deferred)
+**Current sub-step:** Checkpoints 0-10 and Checkpoint 11 evaluation/operations tooling are implemented. Model quality, teaching and latency acceptance remain open; implementation is not a Sprint 5 release. Student RAG, HTTP intake and runtime cache remain disabled in the running app.
+
+**Quality follow-up (2026-11-12):** Steps 1-5 implemented; Step 6 D1 (6.1/6.2/6.3/6.5) validated and journey r4 completed. See docs/checkpoints/sprint-5-quality-step6-d1-r4.md and docs/plans/sprint-5-quality-step6-followup-plan.md. Validation: 183 focused PostgreSQL/Redis tests, 1,254 full real-service tests, 1,086 Linux tests; Ruff/mypy pass. Found-and-unverified turns add exactly one application-owned unproductive attempt, without persisting raw LLM assessment or treating it as an incorrect student grade. No-evidence/unavailable/error outcomes move no counters. A bounded, app-owned pending-evidence receipt bridges uncited retrieved refs to the next admission with TTL/revision/scope revalidation and best-effort consumption. It is absent from prompts and LLM/API writes. R4: 12/12 HTTP 200, null turn errors, replay/restart/audit checks pass; counter 1, 2, 3 moves minimal to directed to explicit; AP40-02 retrieves despite a stale-clarify model plan. However, all answers archive zero citations: T9 has inconsistent citation/claim links and is withheld. Five of six r4 criteria pass, criterion d fails. D2 prompt experiments are deferred because the user gated them on green r4. Next blocker: valid complete citation/claim output under unchanged Step 5 checks, then new acceptance. No release/profile promotion or live enablement. Preserve all historical artifacts and frozen case sets; the reserved pack was already consumed, not unexecuted.
+**Operator workflow:** The published revision remains 78085670-9cba-5d2d-8de2-df3d2db092af. The r3/r4 A/B binding is the older ready ec469aea-bef2-5b57-b631-c30340092055; do not describe r4 as latest-version acceptance. Fixture v2 has the same twelve messages as r3; v1 remains frozen. R4 presentation: docs/demos/student-journey-step6-r4-20261112-presentation/report.html. Protected diagnostics/audits: backend/reports/step6-journey-r4-20261112/ and backend/reports/d1-r4-validation-20261112/. All 17 main-table fingerprints, source/model/flag baselines and 72 historical journey file hashes are unchanged; scratch databases removed. Student RAG, cache and HTTP intake stay disabled; no branch/commit/push/merge operations were performed.
+
+**Citation-contract follow-up (2026-11-12):** The next approved step is implemented: grounded generation uses per-part `{text, citation_ids}` with application-derived exact claim spans and citation union (`specialist-agent-v6-part-sources`). The shared support/teaching checker is unchanged; legacy malformed r4 links remain rejected. Ruff/mypy and 1,269 full real-service tests pass (6 skipped); final test-only runtime coverage is recorded in docs/checkpoints/sprint-5-citation-contract.md. Both bounded real-model T9 component probes parse the new format but time out in the existing support checker and release zero references; the explicit probe also omits labels for its explanation. This is not successful citation acceptance or a full journey. Diagnose those blockers before repeating journey acceptance. D2, release promotion and live enablement remain deferred. Historical r4, frozen cases and published sources are preserved.
+
+**Verifier diagnosis / user decision (2026-11-12):** Keep the runtime verifier at 30 seconds; the user explicitly deferred real-model acceptance. No laptop timeout override, new full journey or D2 experiments. An identical-request timing comparison took 106.94 s (original), 80.18 s (without string maxima), 38.51 s (original repeated); it does not establish a schema fix. All completed outputs had nonliteral supporting quotes. A source-first generation experiment still omitted a factual hint's citations and added unverified UI detail, so it was rejected and restored. All six source/test hashes match the prior validated v6 contract; no application source change remains from this continuation. Restored focused tests: 115 passed. See docs/checkpoints/sprint-5-verifier-diagnosis.md for candidate tests, private artifacts and preservation audit. Source/teaching quality and latency remain open; deferred acceptance is not a release pass.
+
+**Implementation close-out decision (2026-11-12):** The user asked to save remaining evaluation for the final evaluation stage and identify the immediate completion step. See docs/plans/sprint-5-deferred-evaluation-plan.md. Next: prepare docs/checkpoints/sprint-5-implementation-handover.md with completed runtime features, startup/operator procedures, test evidence, defaults and unresolved limitations; review the implementation for handoff. No additional missing RAG feature checkpoint is currently identified. After that close-out, record "implementation complete, acceptance deferred"; do not claim model quality, pilot readiness or release acceptance passed. Keep verifier at 30 seconds and all release/serving decisions separate. No new model runs, profile promotion, live enablement or automatic commit/merge.
 
 ### Primary goal
 
@@ -180,7 +189,7 @@ Important outcome:
 
 > FREDi does not rely on a static list of routing keywords. The Orchestrator semantically interprets student requests and routes them to the most suitable specialist.
 
-### Sprint 4 — Context Engineering 🟡
+### Sprint 4 - Context Engineering (complete; user confirmed merge to main)
 
 Sprint 4 builds the identity, state, conversation, context, onboarding, controlled-update, and multi-user-safe foundations needed before RAG.
 
@@ -216,11 +225,71 @@ Completed:
 - **4B.10 Observability** ✅
 - **4B.11 Multi-user integration / concurrency tests** ✅
 
-### Sprint 5 — RAG / Knowledge Grounding ⏳
+### Sprint 5 - General RAG and durable conversations (current)
 
-Starts only after Sprint 4 is stable.
-
-Sprint 5 will ground specialist agents in AP+ and Process Coach knowledge sources rather than relying only on model knowledge.
+Approved 2026-11-03 on feature/sprint-5. Keep Checkpoints 0-3 storage/extraction.
+Replace unfinished classifier/review design: no classification, optional semantic
+enrichment, instructor approval or mandatory authored hint ladder. Index usable
+content automatically and use hybrid retrieval decisions after specialist routing.
+Preserve supervisor, adaptive guidance, stateless agents and previous sprint behavior.
+Persist identities, user context, conversation sessions, session context and messages
+in PostgreSQL; add history APIs and real Redis caching. vLLM is outside Sprint 5.
+Revised 4A-4C are complete: general indexing contracts, PostgreSQL adapters for all
+five application repositories and durable HTTP chat/history through the application
+Compose overlay. Signed pilot credentials bind access to internal user IDs. Turn
+admission/completion, stored response replay, explicit failures and fenced single-worker
+restart recovery are connected. Base memory mode remains for development/tests.
+Checkpoint 5 now adds 264 contextual chunks with real 768-dimensional embeddings,
+full-text/cosine indexes and 40 cited step records from the three retained PDFs.
+Its separate revision ec469aea-bef2-5b57-b631-c30340092055 is technically ready,
+while collection activation remains pending. Checkpoint 6
+provides uncached scoped metadata/vector/full-text retrieval, citations, bounded
+evidence, pinned ready revisions and explicit failure outcomes through a reader-only
+operator tool. It uses exact scoped vector ranking as the correctness baseline;
+all ten frozen real-model smoke cases passed. See the Checkpoint 6 report and
+docs/operations/knowledge-retrieval.md. Checkpoint 7 now adds bounded hybrid decisions,
+fresh scoped evidence reuse, read-only action execution and failure traces through
+the operator. Planner-only reasoning control preserves existing chat defaults.
+Checkpoint 7 regression was green; its final real-model action pilot is
+10/13, below target. Student RAG remains disabled and model-quality acceptance is
+open. See docs/checkpoints/sprint-5-checkpoint-7.md and
+docs/operations/knowledge-planning.md. Checkpoint 8 now connects opt-in retrieval
+after routing through trusted course bindings and a reader-only pool; all specialists
+use complete rendered-prompt budgeting and archive validated chunk/metadata citations.
+Technical failures do not become student learning signals. Regression: 917 Windows
+and 795 Linux passes. See docs/checkpoints/sprint-5-checkpoint-8.md and
+docs/operations/rag-specialist-context.md. RAG remains disabled in the running app.
+Checkpoint 9 now adds authorized PDF intake, durable jobs, hash duplicate reuse,
+explicit document replacement and atomic complete-revision publication. Lease renewal,
+reclaim/fencing, failed-update preservation and enabled HTTP lifespan/restart are tested.
+Migration 004_intake_jobs is applied; existing corpus checksums/activation are unchanged
+and the main job table is empty. Regression: 933 Windows and 799 Linux passes. Real
+768-dimensional embedding/publication/direct retrieval/duplicate reuse passed; a
+paraphrased smoke query returned no_evidence, recorded as an open quality limitation.
+See docs/checkpoints/sprint-5-checkpoint-9.md and docs/operations/knowledge-intake.md.
+Intake and its separate worker are opt-in, not running/enabled on the retained course.
+The native wizard now completes/protects configuration, provisions/reuses an OS-linked
+operator and guides add/explicit replace/job retry without manual UUID/environment work.
+The user's placeholder JSON is filled and actual setup/menu smoke passed. Index settings,
+knowledge data and activation are unchanged; main intake jobs=0. Full regression is
+951 Windows/810 Linux passes. No ordinary student was adopted as an operator; existing
+explicit manager grants are preserved. See docs/checkpoints/sprint-5-checkpoint-9-wizard.md
+and docs/operations/knowledge-management-wizard.md. Students do not receive file access;
+OS administrators/shared-login users remain within the local trust boundary.
+Checkpoint 10 is implemented: optional real Redis chunk/fact and SQL candidate caching,
+signed payloads, source validation, structured revision/version/fingerprint keys,
+shared-source/private-owner isolation and user-scoped candidate results. PostgreSQL
+admission runs before and after hits; coalescing/cancellation cleanup, bounded I/O,
+TTL/jitter, corruption and outage/restart fallback are verified. Metadata works with
+one reader connection. Native operator smoke proves process-to-process warm reuse
+(6 hits, 0 fills) without student enablement. Current baseline is the user's published
+78085670-9cba-5d2d-8de2-df3d2db092af (3 PDFs, 242 chunks, 40 facts); all six KB checksums
+were preserved. Earlier zero-job/null-active counts above describe their original gates.
+Latest regression: 985 Windows/831 Linux. See docs/checkpoints/sprint-5-checkpoint-10.md
+and docs/operations/knowledge-cache.md. No messages, answers or planner decisions are
+cached. All three runtime flags remain off. Checkpoint 11 now provides frozen
+evaluation, private coordinated backup/scratch restore, recovery and rollback checks;
+model/teaching/latency release acceptance remains open. See its report and release checklist.
 
 ---
 
@@ -500,7 +569,7 @@ Agents must not directly control protected fields such as:
 
 ---
 
-## 10. Sprint 4B.7 — Context Budgeting 🟡 CURRENT
+## 10. Sprint 4B.7 - Context Budgeting (complete)
 
 The context window must be explicitly budgeted.
 
@@ -1509,53 +1578,133 @@ Unless explicitly promoted into the active roadmap, do not add these to current 
 
 ## 27. Current Immediate Work
 
-### Current sprint
+### Current sprint and branch
 
-**Sprint 4 — completion gate (all 4B substeps complete)**
+Sprint 5 - RAG / Knowledge Grounding, on `feature/sprint-5`.
+The user confirmed the Sprint 4 merge to `main`. Preserve working changes; do not
+commit, push, merge or reset branches without the relevant authorization.
 
-### Current sprint branch
+### Current position
 
-```text
-feature/sprint-4
-```
+Checkpoints 0-3 provide real PostgreSQL/pgvector, Redis, scoped repositories and
+registered PDF extraction. Initial extraction retained three PDFs: 101 pages and
+124 sections. Checkpoint 5 subsequently stored 264 chunks/vectors and 40 step facts
+in a separate ready revision; activation remains null. Preserve sources and reports.
 
-All remaining Sprint 4 work should stay on this branch until Sprint 4 is fully complete, fully tested, security-reviewed, documented, container-validated, and ready to merge. `main` should remain the known-good runnable branch.
+The user approved the revised general-RAG plan on 2026-11-03: no classifier or
+instructor review, hybrid request-time retrieval, durable student/session context
+and messages, real Redis, no vLLM. Documentation is updated first. Revised 4A removed
+obsolete workflow and applied 002_general_indexing. The rebuilt importer produced
+revision b2abddbb-bafe-5534-8201-4d4ae81b7c44: 101 pages, 124 usable sections and
+zero diagnostics, reused on repeat. Earlier imports remain intact. Do not
+remove previous sprint code, rewrite applied SQL or erase stored imports.
 
-### Current sub-step
+### Next checkpoint
 
-**None — 4B.11 Multi-user/concurrency validation just completed; Sprint 4 completion gate is next**
+4A-4C are complete. The application overlay activates PostgreSQL HTTP chat, signed
+pilot credentials, owner-scoped session/history/status APIs and stored response replay.
+One HTTP worker per database is enforced; recovery fences old workers and interrupts
+abandoned turns after exclusive ownership. Tests use scratch databases. Source
+references are archived; Checkpoint 8 now integrates student-response provenance.
+Checkpoint 5 is complete: contextual chunks, real pinned embeddings/full-text fields
+and optional source-linked step metadata are stored in a separate complete revision.
+Earlier data is unchanged and repeat indexing makes zero embedding calls.
+Checkpoint 6 is complete: reader-only scoped metadata/vector/full-text retrieval,
+rank fusion with soft preferences, deduplication, source/provenance checks and bounded
+evidence. Explicit ready revisions support operator evaluation while active revision
+remains null; no student graph hook or Redis was added. Checkpoint 7 is implemented:
+typed skip/reuse/lookup/search/clarify proposals, operational scope/revision/budget
+gates, fresh source receipts, combined read-only execution and observable fallbacks.
+The provider-neutral reasoning preference is request-local; existing agents/chat
+retain their defaults. Model reasons/queries are suppressed with evidence on errors
+or revocation. Full regression passes (875 Windows, 759 Linux), but the final host
+qwen3.5:4b pilot passes only 10/13 action expectations, with median planner latency
+31.63 seconds. Model-quality acceptance remains open; do not enable student RAG.
+See the Checkpoint 7 report and planning runbook. Checkpoint 8 is implemented:
+opt-in graph/lifespan integration, trusted per-user course bindings, read-only access,
+full specialist prompt budgeting, current-message deduplication and durable citations.
+Verified source admission is server-only and cannot be supplied by agent API JSON.
+Metadata citations use fact/field/section/page identity with chunk_id null; legacy
+chunk citations remain readable. Authorization is rechecked after generation; errors
+do not cause learning assessments or state proposals. The real-model signed HTTP
+smoke passed with a fixed test router, real planner/specialist and disposable student
+database. This is not model-quality certification. Full final regression: 917 Windows
+passes (3 skips), 795 Linux passes (125 skips). The running app keeps RAG disabled.
+Checkpoint 9 is implemented: manager-authorized upload/status/list/retry API and shared
+operator worker, durable job states, duplicate reuse and explicit stable-ID replacement.
+Publication validates the exact document set/profile/provenance, checks ready revision
+and active-pointer identity, then atomically commits pointer + job success. Expired
+leases recover with new tokens; stale workers cannot publish. Failed/conflicting updates
+preserve active knowledge. Unchanged extracted text is retained, but changed snapshots
+currently rebuild the combined embeddings. No OCR, semantic duplicate matching or
+cross-revision embedding cache is included. New general PDFs are evidence; existing
+canonical workflow authority is preserved for replacements. Migration 004 is applied,
+main intake jobs=0 and retained source checksums/activation are unchanged. Full regression:
+933 Windows passes (4 skips), 799 Linux passes (138 skips). Real embedding direct-query
+smoke passed; its paraphrase returned no_evidence, so quality is not certified. Intake,
+worker and student RAG remain opt-in and disabled/not running on the retained course.
+See docs/checkpoints/sprint-5-checkpoint-9.md and docs/operations/knowledge-intake.md.
+Checkpoint 10 has now completed the optional Redis integration; see the update below.
+Checkpoint 9 operator follow-up is also complete: `scripts.manage_knowledge` automates
+protected setup, embedding-profile validation and add/replace/job menus. Its actual
+local setup has one dedicated OS-linked management account and the existing JSON is
+completed. It did not submit any PDFs; main jobs=0 and corpus/activation are unchanged.
+That wizard gate passed 951 Windows/810 Linux cases. Subsequent operator PDF updates
+published revision 78085670-9cba-5d2d-8de2-df3d2db092af with 242 chunks and 40 facts.
+Checkpoint 10 preserves this active revision and all six source-table checksums. It
+adds shared-source hydration/user-scoped candidate cache, key-bound signatures,
+typed/source validation, before/after database admission and safe Redis fallback.
+Actual Redis/PostgreSQL tests include concurrent fills, corruption, private scopes,
+publication/version changes, revocation during hits, one-connection metadata and an
+isolated test-server outage/restart. Signed chat/history survives Redis auth failure.
+Full regression: 985 Windows passes (5 skips), 831 Linux passes (159 skips). A repeated
+native operator process had six hits and zero fills. Runtime cache, RAG and HTTP intake
+remain disabled; model quality/latency gates are still open. Checkpoint 11 update follows.
+See docs/checkpoints/sprint-5-checkpoint-10.md and docs/operations/knowledge-cache.md.
+See docs/checkpoints/sprint-5-checkpoint-9-wizard.md and the management wizard runbook.
+See docs/checkpoints/sprint-5-checkpoint-8.md and docs/operations/rag-specialist-context.md.
+Checkpoint 11 evaluation/operations tooling is implemented. Frozen v1 has twelve
+development and fifteen held-out cases, 0.90 retrieval/rejection/planner targets and
+twelve teaching probes across all specialists/four levels. Gold labels stay outside
+requests. The evaluator reads the published course and creates/drops an isolated
+general-PDF index. Snapshot backup includes all seventeen application/knowledge
+tables and six referenced originals; scratch restore checks rows/roles/sources and
+optional fenced recovery. A seeded restore recovers an abandoned turn only in its
+scratch database. Independent cache/RAG rollback and four-student persistence/
+isolation tests pass. Full regression: 1005 Windows passes (6 skips), 848 Linux
+passes (163 skips); final focused run 22 passed/1 opt-in skipped. Held-out recall
+is 1.0 per specialist, strict rejection 2/3, expected planner 10/15, valid plans
+12/15 and validated teaching outputs 3/12. Held-out planner p50/p95 43.43/60.61 s.
+The actual full-router signed HTTP/history/replay test passes (122.85 s exchange).
+All seventeen retained table fingerprints/activation are unchanged and no scratch
+databases remain. Model outputs and backup contents remain private under ignored
+reports. Real-model quality failures must remain visible; do not enable the pilot
+or call this a completed sprint because regression passed. See
+docs/checkpoints/sprint-5-checkpoint-11.md, docs/operations/rag-evaluation-and-recovery.md
+and docs/releases/sprint-5-release-checklist.md. No migration/PDF/previous-sprint
+changes, live restore, release enablement, commit/push/merge were authorized.
+Follow the roadmap one checkpoint at a time.
 
-### Just completed
-
-- **4B.7 Context Budgeting** — provider-neutral token estimation,
-  budget policy, token-aware history selection, real budget metadata,
-  `ContextService` integration;
-- **4B.8 Session Summaries** — deterministic update policy, bounded
-  batch fetches, incremental persisted summaries, best-effort
-  `update_session_summary` graph node;
-- **4B.9 Guidance Policy** — response assessment inside the
-  specialist's existing output, deterministic `record_response_signal`
-  counters, central `select_guidance()` level policy with recorded
-  reason in `ContextMetadata`;
-- **4B.10 Observability** — one typed `RequestObservabilityEvent` per
-  request aggregated from the graph's final state by a pure mapper,
-  emitted best-effort from `OrchestrationService.execute()` via the
-  `fredi.request_events` logger; optional `OBSERVABILITY_LOG_FILE`
-  JSON-lines research export; no message/free-LLM-text content in events;
-- **4B.11 Multi-user/concurrency validation** — deterministic
-  barrier-forced concurrency tests across three layers (repository,
-  shared-runtime orchestration, HTTP API) proving no cross-user /
-  cross-session leakage, coherent optimistic version conflicts, shared
-  stateless agents, and concurrent context builds; no runtime changes
-  were required (the architecture was already concurrency-ready).
-
-### Next: Sprint 4 completion gate
-
-All 4B substeps are implemented and green. The remaining gate per
-Section 23 is: sprint security review, `docs/sprints/sprint-4.md`
-report, `README.md` sync to current state, Docker/container rebuild +
-startup + smoke validation, and merge of `feature/sprint-4` into `main`
-once the whole gate is green. Sprint 5 RAG starts only after that.
+Acceptance follow-up 1 (2026-11-06) diagnoses slow generation and invalid plans.
+A minimal development answer took 84.34 s / 414 output tokens; concise grounded
+response instructions reduced a paired example to 48.21 s / 134 tokens. A separate
+twelve-response development run validated all outputs within 60 s (median 43.26 s),
+but source fidelity, role/guidance behavior and assessment of questions remain open.
+The two consumed-v1 invalid cases copied REF-9999 from prompt examples. Descriptive
+examples and request/fresh-evidence-bound metadata-ID enums correct both regressions;
+runtime validation is unchanged. Required reason/query/clarification strings retain
+minLength=1 so smaller decoders cannot emit empty required values. Literal stock
+question examples were removed after qwen3:1.7b copied one into unrelated replies.
+The user selected this laptop as the optimization target. Installed-model comparisons
+found faster responses, but no small teacher passed review. qwen3:1.7b is a promising
+planner candidate: full development split 12/12 valid/expected, median 15.80 s and
+p95 18.46 s. No fresh independent holdout is claimed. Final regression 1022 Windows
+passes (6 skips), 865 Linux (163 skips), focused 95 passes; Ruff/mypy 266 files.
+Real full-router HTTP/history/replay passes (116.15 s exchange); this remains too
+slow to imply a laptop SLA. All seventeen retained table fingerprints and activation
+match the post-Docker-restart baseline; no scratch databases remain. Old v1 suite
+and outputs are unchanged. Native profile experiments did not change the application
+chat model qwen3:4b or enable RAG/cache/intake. See the acceptance follow-up report.
 
 ---
 
@@ -1618,4 +1767,21 @@ Future vLLM serving / batching deployment
 
 If a new chat needs a compact handoff, use:
 
-> We are building **FREDi**, a multi-agentic AI learning environment for AP+ ERP education. Sprints 1–3 are complete. Sprint 4 is Context Engineering. Identity, repository contracts, in-memory persistence, conversation/session services, UserContext, ScenarioCard/onboarding, SessionContext, ContextService, shared GuidanceLevel, agent-specific context policies, semantic onboarding confirmation, LangGraph context integration, and controlled state-update proposals are implemented. We just completed **4B.7 Context Budgeting**, **4B.8 Session Summaries**, **4B.9 Guidance Policy**, **4B.10 Observability**, and **4B.11 Multi-user/concurrency validation** (all implemented, tested, and wired into the runtime), on the Sprint 4 feature branch `feature/sprint-4`. Context budgeting protects essential context first, selects the newest contiguous history suffix that fits, retains chronological order, preserves the full archive, and records token/truncation metadata. Session summaries update incrementally in a best-effort graph node. Guidance is selected centrally and deterministically (`select_guidance`) from persisted counters that the `record_response_signal` node updates from each specialist's in-output assessment of the student's response — zero extra inference; the LLM never sets the level. Preserve `current_message_id` exclusion, `recent_message_limit`, user/session isolation, and existing public orchestration factory APIs. Observability emits one typed, best-effort event per request (no message or free-LLM-text content) with an optional `OBSERVABILITY_LOG_FILE` JSON-lines export. Multi-user/concurrency behavior is validated by deterministic in-repo tests (barrier-forced interleaving, canary leak checks at repository, captured-prompt, response, and HTTP layers); no runtime changes were needed. Sprint 4's completion gate (security review, docs, README, Docker, merge) is next, then **Sprint 5 RAG**. Agents are stateless, persistent state lives in services/repositories, and the architecture must remain compatible with current Ollama development and later vLLM multi-user serving. **Mandatory workflow:** before every sprint, inspect existing integration points, present a plan, and wait for explicit user go-ahead. Develop the sprint on `feature/sprint-<number>` and push that branch first. For every feature, add meaningful happy-path, edge-case, failure, isolation, and regression tests, and verify it is wired into the existing runtime. Before completing a sprint, run formatting/lint/type checks, focused tests, integration tests, and the full suite; perform and document a security review; create/update `docs/sprints/sprint-<number>.md` in human language; update `README.md` to the current project state; rebuild/update Docker containers; start the application in containers and verify health/smoke behavior. Merge into `main` only when the whole sprint is complete and green. `main` must always remain the known-good runnable application.
+Current acceptance update (2026-11-06; supersedes the regression counts below):
+1032 Windows / 875 Linux passes; student simulation 12 real turns / 26 real chat calls /
+24 messages, replay/restart and main-data preservation pass. Presentation:
+docs/demos/student-journey-20261106-presentation-2/README.md. Routine request events
+now have versioned safe RAG fields and bounded file/optional Docker-volume retention;
+private model capture is operator-only. Onboarding generation schemas omit provider
+maxLength constraints but original Pydantic bounds still validate extracted data.
+Current-step proposals, plain-question grading, cited-passage support, routing and
+latency need improvement. See docs/checkpoints/sprint-5-student-simulation-1.md.
+Follow-up 1 fixes
+copied planner example IDs with input-bound metadata enums and nonempty required
+strings, adds private generation traces and concise grounded-response instructions.
+The user wants laptop optimization first. qwen3:1.7b planner development 12/12,
+median 15.80 s; smaller teachers still fail guidance/source review. No profile promoted.
+All live RAG/cache/intake flags remain off, chat qwen3:4b. See
+docs/checkpoints/sprint-5-rag-diagnostics-1.md; a new independent holdout is still needed.
+
+> FREDi: Sprint 5 on feature/sprint-5. Checkpoints 0-10 and Checkpoint 11 evaluation/operations tooling implemented; release acceptance remains open. No classifier/enrichment/instructor review or vLLM. PostgreSQL stores student/session contexts, messages, history/replay and fenced single-worker recovery. Optional RAG supplies authorized budgeted evidence after semantic routing and validates/archives citations. Intake/wizard supports automatic embedding, explicit stable-ID replacement and durable jobs. Redis caches signed scoped source hydration/candidates, with fresh PostgreSQL admission and outage fallback; no messages/answers/planner outputs/query embeddings are cached. Published course remains active at 78085670-9cba-5d2d-8de2-df3d2db092af, version 2: 3 docs/242 vectors/40 facts. Cumulative KB remains 14 revisions/36 doc snapshots/1488 sections/1015 chunks/160 facts. Checkpoint 11 freezes 12 development and 15 held-out cases. Development planner 12/12; held-out recall 1.0 per specialist, strict rejection 2/3, expected planner 10/15, valid plans 12/15; teaching outputs validated 3/12 with nine failures near 60 seconds. Held-out planner p50/p95 43.43/60.61 s. Actual full-router/planner/specialist signed HTTP/history/replay passes, 122.85 s exchange; this does not close quality/latency gates. Backup includes 17 tables and 6 original blobs; scratch restore/roles/recovery and independent RAG/Redis rollback pass. All retained fingerprints/activation unchanged; no scratch DBs remain. Full regression 1005 Windows/848 Linux; final focused 22 passes; Ruff/mypy 265 files. Runtime RAG/cache/HTTP intake remain off, chat qwen3:4b. See docs/checkpoints/sprint-5-checkpoint-11.md, docs/operations/rag-evaluation-and-recovery.md and docs/releases/sprint-5-release-checklist.md. Improve acceptance on development cases then a new frozen holdout; preserve executed labels, data and migrations. No enablement, live restore, commit/push/merge without authorization.

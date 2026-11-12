@@ -9,6 +9,8 @@ from typing import (
 )
 from uuid import UUID, uuid4
 
+from app.identity import UserIdentity
+from app.identity.schemas import UserStatus
 from app.logging.logger import logger
 from app.orchestration.schemas import (
     OrchestrationRequest,
@@ -20,6 +22,8 @@ from app.orchestration.state import (
 from app.repositories.identity import (
     UserIdentityRepository,
 )
+from app.repositories.turns import TurnStore
+from app.services.durable_turn_service import DurableTurnService
 
 
 class AsyncGraph(Protocol):
@@ -58,15 +62,25 @@ class InvalidSessionIdError(OrchestrationClientError):
     http_status_code = 422
 
 
+class MissingRequestIdError(OrchestrationClientError):
+    http_status_code = 422
+
+
+class UnauthorizedStudentError(OrchestrationClientError):
+    http_status_code = 403
+
+
 class OrchestrationService:
     def __init__(
         self,
         *,
         graph: AsyncGraph,
         identity_repository: (UserIdentityRepository),
+        turn_store: TurnStore | None = None,
     ) -> None:
         self._graph = graph
         self._identity_repository = identity_repository
+        self._turn_service = DurableTurnService(turn_store) if turn_store is not None else None
 
     def _emit_request_event(
         self,
@@ -93,7 +107,7 @@ class OrchestrationService:
 
             logging.getLogger(REQUEST_EVENT_LOGGER_NAME).info(
                 REQUEST_COMPLETED_EVENT,
-                extra={"event": event.model_dump(mode="json")},
+                extra={"event": event.log_payload()},
             )
         except Exception:  # noqa: BLE001 - emission is best-effort
             pass
@@ -101,10 +115,21 @@ class OrchestrationService:
     async def execute(
         self,
         request: OrchestrationRequest,
+        *,
+        trusted_user_id: UUID | None = None,
     ) -> OrchestrationResponse:
-        identity = await self._identity_repository.get_by_student_id(
-            student_id=(request.student_id),
-        )
+        if trusted_user_id is None:
+            identity = await self._identity_repository.get_by_student_id(
+                student_id=request.student_id
+            )
+        else:
+            identity = await self._identity_repository.get_by_user_id(trusted_user_id)
+            if (
+                identity is None
+                or identity.student_id != request.student_id
+                or identity.status != UserStatus.ACTIVE
+            ):
+                raise UnauthorizedStudentError("Current user is not authorized for this request.")
 
         if identity is None:
             raise UnknownStudentError("No FREDi user identity exists for the supplied student_id.")
@@ -114,11 +139,42 @@ class OrchestrationService:
         except ValueError as exc:
             raise InvalidSessionIdError("session_id must be a valid FREDi session UUID.") from exc
 
-        trace_id = uuid4()
+        if self._turn_service is not None:
+            if request.request_id is None:
+                raise MissingRequestIdError("request_id is required for durable requests.")
+            return await self._turn_service.execute(
+                request,
+                user_id=identity.user_id,
+                session_id=session_uuid,
+                run=lambda message_id, trace_id: self._execute_graph(
+                    request,
+                    identity,
+                    session_uuid,
+                    current_message_id=message_id,
+                    trace_id=trace_id,
+                ),
+            )
+        return await self._execute_graph(request, identity, session_uuid)
+
+    async def _execute_graph(
+        self,
+        request: OrchestrationRequest,
+        identity: UserIdentity,
+        session_uuid: UUID,
+        *,
+        current_message_id: UUID | None = None,
+        trace_id: UUID | None = None,
+    ) -> OrchestrationResponse:
+        trace_id = trace_id or uuid4()
 
         metadata = {
-            **dict(request.metadata),
+            **{
+                k: v
+                for k, v in request.metadata.items()
+                if k not in {"rag", "grounding", "source_references"}
+            },
             "trace_id": str(trace_id),
+            "request_id": request.request_id,
         }
 
         initial_state: OrchestrationState = {
@@ -131,6 +187,9 @@ class OrchestrationService:
             "metadata": metadata,
             "error": None,
         }
+        if current_message_id is not None:
+            initial_state["turn_managed"] = True
+            initial_state["current_message_id"] = current_message_id
 
         logger.info(
             "Orchestration_started",
@@ -202,6 +261,9 @@ class OrchestrationService:
             route=result.get("route"),
             route_reason=result.get("route_reason"),
             error=result.get("error"),
+            source_references=result.get("source_references", [])
+            if not result.get("error")
+            else [],
             metadata=dict(
                 result.get(
                     "metadata",

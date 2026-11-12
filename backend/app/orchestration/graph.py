@@ -15,6 +15,7 @@ from app.agents.registry import (
 from app.context.policies import (
     AgentContextPolicyService,
 )
+from app.knowledge.integration import SpecialistGroundingService
 from app.orchestration.nodes import (
     apply_state_updates_node,
     execute_agent_node,
@@ -70,6 +71,7 @@ def build_orchestration_graph(
     session_state_update_service: (SessionStateUpdateService),
     session_summary_service: (SessionSummaryService),
     user_context_service: (UserContextService),
+    grounding_service: SpecialistGroundingService | None = None,
 ):
     """
     Build the Sprint 4B.5 runtime graph.
@@ -101,6 +103,8 @@ def build_orchestration_graph(
             state,
             orchestrator=orchestrator,
             context_policy_service=(context_policy_service),
+            session_state_update_service=session_state_update_service,
+            context_service=context_service,
         )
 
     async def scenario_agent(
@@ -110,6 +114,7 @@ def build_orchestration_graph(
             state,
             agent_registry=agent_registry,
             agent_name="scenario",
+            grounding_service=grounding_service,
             context_policy_service=(context_policy_service),
         )
 
@@ -120,6 +125,7 @@ def build_orchestration_graph(
             state,
             agent_registry=agent_registry,
             agent_name=("process_coach"),
+            grounding_service=grounding_service,
             context_policy_service=(context_policy_service),
         )
 
@@ -130,6 +136,7 @@ def build_orchestration_graph(
             state,
             agent_registry=agent_registry,
             agent_name=("ap_plus_navigator"),
+            grounding_service=grounding_service,
             context_policy_service=(context_policy_service),
         )
 

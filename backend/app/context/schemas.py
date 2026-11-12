@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 from pydantic import (
@@ -329,6 +329,10 @@ class HintState(ContextModel):
         ge=0,
     )
 
+    # Separate from the historical total: two recent fully correct assessed
+    # contributions permit one recovery step. Legacy JSON records default to zero.
+    consecutive_productive_attempts: int = Field(default=0, ge=0)
+
     # Consecutive judged-unproductive student responses
     # (incorrect / off_track), written deterministically from the
     # specialist's response assessment (Sprint 4B.9).
@@ -461,6 +465,37 @@ class ConversationSession(ContextModel):
     )
 
 
+class MessageSourceReference(ContextModel):
+    """Citation provenance for the history UI; populated by later RAG checkpoints."""
+
+    document_id: ShortText
+    revision_id: ShortText
+    chunk_id: ShortText | None = None
+    page_start: int = Field(ge=1)
+    page_end: int = Field(ge=1)
+    section: ShortText | None = None
+    kind: Literal["chunk", "metadata"] = "chunk"
+    evidence_id: ShortText | None = None
+    field_name: ShortText | None = None
+    reference_id: ShortText | None = None
+    namespace: ShortText | None = None
+    source_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    citation_label: ShortText | None = None
+    title: ShortText | None = None
+
+    @model_validator(mode="after")
+    def ordered_pages(self) -> MessageSourceReference:
+        if self.page_end < self.page_start:
+            raise ValueError("Citation end page must not precede start page.")
+        if self.kind == "chunk" and self.chunk_id is None:
+            raise ValueError("Chunk citations require a real chunk identity.")
+        if self.kind == "metadata" and (
+            self.chunk_id is not None or not self.evidence_id or not self.field_name
+        ):
+            raise ValueError("Metadata citations require fact/field identity, not a chunk ID.")
+        return self
+
+
 class ConversationMessage(ContextModel):
     """
     One persisted message in a conversation session.
@@ -490,6 +525,8 @@ class ConversationMessage(ContextModel):
     route: ShortText | None = None
 
     trace_id: UUID | None = None
+
+    source_references: list[MessageSourceReference] = Field(default_factory=list)
 
 
 class SessionSummary(ContextModel):
@@ -543,6 +580,27 @@ class SessionSummary(ContextModel):
     )
 
 
+class PendingEvidenceReceipt(ContextModel):
+    """
+    App-owned single-turn bridge for grounded evidence that was retrieved
+    but never cited because the generated answer failed verification.
+
+    The student therefore received no citations to point back at, and a
+    follow-up question about the same material would otherwise re-retrieve
+    from scratch. The next grounding admission may revalidate and reuse
+    these references (revision and scope rechecked per ref), then the
+    receipt is consumed. It is never rendered into a prompt and never
+    writable by an LLM or through the API.
+    """
+
+    created_at: datetime
+
+    references: list[MessageSourceReference] = Field(
+        default_factory=list,
+        max_length=12,
+    )
+
+
 class SessionContext(ContextModel):
     user_id: UUID
 
@@ -561,6 +619,8 @@ class SessionContext(ContextModel):
     unresolved_questions: list[MediumText] = Field(
         default_factory=list,
     )
+
+    pending_evidence_receipt: PendingEvidenceReceipt | None = None
 
     summary: SessionSummary | None = None
 
@@ -628,6 +688,8 @@ class SessionContextUpdate(ContextModel):
     last_selected_agent: ShortText | None = None
 
     unresolved_questions: list[MediumText] | None = None
+
+    pending_evidence_receipt: PendingEvidenceReceipt | None = None
 
 
 class ContextChunk(ContextModel):

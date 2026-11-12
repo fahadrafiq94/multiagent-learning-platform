@@ -1,0 +1,76 @@
+{
+  "version": "student-citation-support-development-v1",
+  "split": "development",
+  "synthetic": true,
+  "cases": [
+    {
+      "case_id": "ui-correct-passage",
+      "evidence": ["FLOW-2 is called Assign Address.", "The Address field offers a Picklist for selecting an existing address."],
+      "answer": "The Address field offers a Picklist for selecting an existing address.",
+      "claims": [{"text": "The Address field offers a Picklist for selecting an existing address.", "citation_ids": ["K2"]}],
+      "citation_ids": ["K2"],
+      "expected": "passed"
+    },
+    {
+      "case_id": "ui-wrong-metadata-passage",
+      "evidence": ["FLOW-2 is called Assign Address.", "The Address field offers a Picklist for selecting an existing address."],
+      "answer": "The Address field offers a Picklist for selecting an existing address.",
+      "claims": [{"text": "The Address field offers a Picklist for selecting an existing address.", "citation_ids": ["K1"]}],
+      "citation_ids": ["K1"],
+      "expected": "abstain"
+    },
+    {
+      "case_id": "partially-supported-extra-tab",
+      "evidence": ["The Address field offers a Picklist for selecting an existing address."],
+      "answer": "The Address field offers a Picklist; open the Purchasing tab first.",
+      "claims": [{"text": "The Address field offers a Picklist; open the Purchasing tab first.", "citation_ids": ["K1"]}],
+      "citation_ids": ["K1"],
+      "expected": "abstain"
+    },
+    {
+      "case_id": "combined-prerequisite-and-ui",
+      "evidence": ["Prerequisite: an existing client record is required.", "The Address field offers a Picklist for selecting an existing address."],
+      "answer": "An existing client record is required, and the Address field offers a Picklist.",
+      "claims": [{"text": "An existing client record is required, and the Address field offers a Picklist.", "citation_ids": ["K1", "K2"]}],
+      "citation_ids": ["K1", "K2"],
+      "expected": "passed"
+    },
+    {
+      "case_id": "unsupported-causal-explanation",
+      "evidence": ["Prerequisite: an existing client record is required."],
+      "answer": "A client record is required because the system checks the customer's credit score at this stage.",
+      "claims": [{"text": "A client record is required because the system checks the customer's credit score at this stage.", "citation_ids": ["K1"]}],
+      "citation_ids": ["K1"],
+      "expected": "abstain"
+    },
+    {
+      "case_id": "undeclared-assertion",
+      "evidence": ["The Address field offers a Picklist for selecting an existing address."],
+      "answer": "Open the Rocket tab to approve the customer.",
+      "claims": [],
+      "citation_ids": [],
+      "expected": "abstain"
+    },
+    {
+      "case_id": "non-assertive-reflection",
+      "evidence": ["Prerequisite: an existing client record is required."],
+      "answer": "What information do you already have about this task?",
+      "claims": [],
+      "citation_ids": [],
+      "expected": "passed"
+    },
+    {
+      "case_id": "lost-prerequisite-exception",
+      "evidence": ["Create the invoice after delivery, except for prepaid orders, which may be invoiced before delivery."],
+      "answer": "Every invoice must be created after delivery, without exception.",
+      "claims": [{"text": "Every invoice must be created after delivery, without exception.", "citation_ids": ["K1"]}],
+      "citation_ids": ["K1"],
+      "expected": "abstain"
+    }
+  ],
+  "generation_probes": [
+    {"agent": "scenario", "question": "What is the documented purpose of the address assignment task?", "evidence": ["The address assignment task links an existing delivery address to an existing client record."], "guidance": "explicit"},
+    {"agent": "process_coach", "question": "What must exist before address assignment?", "evidence": ["Prerequisite: an existing client record and an existing delivery address are required before address assignment."], "guidance": "explicit"},
+    {"agent": "ap_plus_navigator", "question": "Which field and control select an existing address?", "evidence": ["The Address field offers a Picklist for selecting an existing address."], "guidance": "explicit"}
+  ]
+}

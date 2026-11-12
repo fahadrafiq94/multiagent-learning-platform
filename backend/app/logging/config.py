@@ -1,5 +1,7 @@
 import json
 import logging
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -73,15 +75,6 @@ def _attach_request_event_file_handler() -> None:
     write each request event as one JSON line to that file. Propagation
     stays on, so the event still reaches the main application log too.
     """
-    target = settings.observability_log_file
-
-    if not target:
-        return
-
-    handler = logging.FileHandler(target, encoding="utf-8")
-
-    handler.setFormatter(_RequestEventJsonFormatter())
-
     # Replace any previous handler so re-configuration never doubles
     # the lines written per event.
     for existing in logging.getLogger(REQUEST_EVENT_LOGGER_NAME).handlers[:]:
@@ -90,4 +83,15 @@ def _attach_request_event_file_handler() -> None:
 
             logging.getLogger(REQUEST_EVENT_LOGGER_NAME).removeHandler(existing)
 
+    target = settings.observability_log_file
+    if not target:
+        return
+    Path(target).parent.mkdir(parents=True, exist_ok=True)
+    handler = RotatingFileHandler(
+        target,
+        encoding="utf-8",
+        maxBytes=settings.observability_log_max_bytes,
+        backupCount=settings.observability_log_backup_count,
+    )
+    handler.setFormatter(_RequestEventJsonFormatter())
     logging.getLogger(REQUEST_EVENT_LOGGER_NAME).addHandler(handler)

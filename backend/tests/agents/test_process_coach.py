@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.agents.exceptions import AgentExecutionError
+from app.agents.grounding import GROUNDED_RESPONSE_STYLE
 from app.agents.policies import (
     PROCESS_COACH_GUIDANCE,
 )
@@ -174,7 +175,11 @@ async def test_process_coach_builds_structured_model_request() -> None:
 
     assert generated_request.messages[1].content == request.user_message
 
-    assert generated_request.response_schema == (SpecialistAgentOutput.model_json_schema())
+    expected_schema = SpecialistAgentOutput.model_json_schema()
+    expected_schema["properties"]["content"]["description"] = GROUNDED_RESPONSE_STYLE[
+        request.guidance_level
+    ]
+    assert generated_request.response_schema == expected_schema
 
     assert generated_request.metadata["task"] == "process_coach_response"
 

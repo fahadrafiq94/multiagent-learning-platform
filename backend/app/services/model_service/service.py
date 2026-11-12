@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-from app.services.model_service.base import ModelProvider
+from app.services.model_service.base import EmbeddingInspector, ModelProvider
+from app.services.model_service.exceptions import ModelEmbeddingError
 from app.services.model_service.schemas import (
+    EmbeddingModelInfo,
     ModelChatRequest,
     ModelChatResponse,
     ModelEmbeddingRequest,
@@ -41,3 +43,10 @@ class ModelService:
 
     async def health(self) -> ModelHealthResponse:
         return await self._provider.health()
+
+    async def inspect_embedding_model(self, model: str) -> EmbeddingModelInfo:
+        if not isinstance(self._provider, EmbeddingInspector):
+            raise ModelEmbeddingError(
+                "unknown", details={"error": "Embedding inspection is unavailable."}
+            )
+        return await self._provider.inspect_embedding_model(model)

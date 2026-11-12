@@ -1,0 +1,122 @@
+# Shared dev/prod knowledge services. Add to the existing Compose file explicitly.
+# No backend dependency or runtime feature is enabled by this overlay.
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg16-bookworm
+    profiles: [knowledge]
+    environment:
+      POSTGRES_DB: fredi_knowledge
+      POSTGRES_USER: fredi_knowledge_admin
+      POSTGRES_PASSWORD: ${KNOWLEDGE_POSTGRES_PASSWORD:?Run knowledge_infra.py init first}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+      KNOWLEDGE_WRITER_PASSWORD: ${KNOWLEDGE_WRITER_PASSWORD:?Writer password is required}
+      KNOWLEDGE_READER_PASSWORD: ${KNOWLEDGE_READER_PASSWORD:?Reader password is required}
+    volumes:
+      - knowledge-postgres-data:/var/lib/postgresql/data
+      - ../postgres/init-knowledge.sh:/docker-entrypoint-initdb.d/10-knowledge.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    networks: [fredi-network]
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.2.11-bookworm
+    profiles: [knowledge]
+    environment:
+      REDIS_PASSWORD: ${KNOWLEDGE_REDIS_PASSWORD:?Redis password is required}
+    # Cache only: persistence is disabled; PostgreSQL remains authoritative.
+    command:
+      - /bin/sh
+      - -ec
+      - >-
+        exec redis-server --save "" --appendonly no
+        --maxmemory 128mb --maxmemory-policy allkeys-lru
+        --requirepass "$$REDIS_PASSWORD"
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -qx PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    networks: [fredi-network]
+    restart: unless-stopped
+
+  knowledge-import:
+    build:
+      context: ../..
+      dockerfile: docker/backend/Dockerfile
+    profiles: [knowledge-tools]
+    entrypoint: [python, -m, scripts.import_knowledge]
+    command: [--help]
+    environment:
+      KNOWLEDGE_DB_HOST: postgres
+      KNOWLEDGE_WRITER_PASSWORD: ${KNOWLEDGE_WRITER_PASSWORD:?Writer password is required}
+    volumes:
+      - ../../docs/RAG_Docs:/input:ro
+      - ../../docs/knowledge:/config:ro
+      - knowledge-sources:/sources
+    networks: [fredi-network]
+    mem_limit: 768m
+    cpus: 1.0
+    healthcheck:
+      disable: true
+    restart: "no"
+
+  knowledge-index:
+    build:
+      context: ../..
+      dockerfile: docker/backend/Dockerfile
+    profiles: [knowledge-tools]
+    entrypoint: [python, -m, scripts.index_knowledge]
+    command: [--help]
+    environment:
+      KNOWLEDGE_DB_HOST: postgres
+      KNOWLEDGE_WRITER_PASSWORD: ${KNOWLEDGE_WRITER_PASSWORD:?Writer password is required}
+      OLLAMA_BASE_URL: http://ollama:11434
+    volumes:
+      - ../../docs/knowledge:/config:ro
+    networks: [fredi-network]
+    mem_limit: 768m
+    cpus: 1.0
+    healthcheck:
+      disable: true
+    restart: "no"
+
+  knowledge-retrieve:
+    build:
+      context: ../..
+      dockerfile: docker/backend/Dockerfile
+    profiles: [knowledge-tools]
+    entrypoint: [python, -m, scripts.retrieve_knowledge]
+    command: [--help]
+    environment:
+      KNOWLEDGE_DB_HOST: postgres
+      KNOWLEDGE_READER_PASSWORD: ${KNOWLEDGE_READER_PASSWORD:?Reader password is required}
+      OLLAMA_BASE_URL: http://ollama:11434
+    volumes:
+      - ../../docs/knowledge:/config:ro
+    networks: [fredi-network]
+    mem_limit: 512m
+    cpus: 1.0
+    healthcheck:
+      disable: true
+    restart: "no"
+
+  # One-off source-volume checks only; not a fifth long-running application service.
+  knowledge-volume-check:
+    image: pgvector/pgvector:0.8.7-pg16-bookworm
+    profiles: [knowledge-tools]
+    entrypoint: [/bin/sh, -ec]
+    command: ['test -d /sources']
+    volumes:
+      - knowledge-sources:/sources
+    network_mode: none
+    restart: "no"
+
+volumes:
+  knowledge-postgres-data:
+  knowledge-sources:

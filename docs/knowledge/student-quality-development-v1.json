@@ -1,0 +1,1263 @@
+{
+  "version": "student-quality-development-v1",
+  "split": "development",
+  "prepared_on": "2026-11-09",
+  "baseline_run_id": "20261106T080902Z-cba0e4",
+  "cases": [
+    {
+      "case_id": "role-original",
+      "finding": "extraction",
+      "stage": "onboarding",
+      "baseline_turn": "introduction",
+      "message": "I am a production planner at UrbanCycle. We assemble custom bicycles.",
+      "context": {},
+      "checks": [
+        {
+          "field": "draft.learner_role",
+          "operator": "text_equals",
+          "expected": "production planner"
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "fact_fidelity",
+          "expected": "Retain the explicit role and company; ask only for information still missing."
+        }
+      ]
+    },
+    {
+      "case_id": "question-original",
+      "finding": "assessment",
+      "stage": "conversation",
+      "baseline_turn": "known_goal",
+      "message": "What is our main business goal?",
+      "context": {
+        "scenario": {
+          "company": "UrbanCycle",
+          "role": "purchasing coordinator",
+          "goals": [
+            "Reduce shortages and improve delivery reliability."
+          ]
+        }
+      },
+      "checks": [
+        {
+          "field": "assessment.understanding",
+          "operator": "one_of",
+          "expected": [
+            null,
+            "not_applicable"
+          ]
+        },
+        {
+          "field": "assessment.signal_recorded",
+          "operator": "equals",
+          "expected": false
+        }
+      ],
+      "reviews": []
+    },
+    {
+      "case_id": "step-original",
+      "finding": "saved_state",
+      "stage": "conversation",
+      "baseline_turn": "current_step",
+      "message": "I am now working on AP40-10.",
+      "context": {
+        "current_step_id": null
+      },
+      "checks": [
+        {
+          "field": "state.current_step_id",
+          "operator": "equals",
+          "expected": "AP40-10"
+        },
+        {
+          "field": "progress.completed_steps",
+          "operator": "equals",
+          "expected": []
+        }
+      ],
+      "reviews": []
+    },
+    {
+      "case_id": "coach-original",
+      "finding": "routing",
+      "stage": "conversation",
+      "baseline_turn": "misconception",
+      "message": "I think the item-supplier master creates both the item and supplier records, so those records do not need to exist beforehand. Is that correct?",
+      "context": {},
+      "checks": [
+        {
+          "field": "route",
+          "operator": "equals",
+          "expected": "process_coach"
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "routing",
+          "expected": "The immediate need is understanding prerequisite records, not company/scenario clarification."
+        }
+      ]
+    },
+    {
+      "case_id": "hint-route-original",
+      "finding": "routing",
+      "stage": "conversation",
+      "baseline_turn": "hint",
+      "message": "I still do not understand the relationship. Could you give me one hint?",
+      "context": {
+        "history": [
+          {
+            "role": "user",
+            "content": "I think the item-supplier master creates both the item and supplier records, so those records do not need to exist beforehand. Is that correct?"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "field": "route",
+          "operator": "equals",
+          "expected": "process_coach"
+        }
+      ],
+      "reviews": []
+    },
+    {
+      "case_id": "minimal-original",
+      "finding": "guidance",
+      "stage": "conversation",
+      "baseline_turn": "misconception",
+      "message": "I think the item-supplier master creates both the item and supplier records, so those records do not need to exist beforehand. Is that correct?",
+      "context": {
+        "guidance": "minimal"
+      },
+      "checks": [
+        {
+          "field": "guidance.used",
+          "operator": "equals",
+          "expected": "minimal"
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "teaching_style",
+          "expected": "For this learning-help request at minimal guidance, ask one focused reasoning question without first giving the corrective prerequisite answer."
+        }
+      ]
+    },
+    {
+      "case_id": "citation-prerequisite-original",
+      "finding": "citation_support",
+      "stage": "conversation",
+      "baseline_turn": "misconception",
+      "message": "I think the item-supplier master creates both the item and supplier records, so those records do not need to exist beforehand. Is that correct?",
+      "context": {
+        "evidence_source": "Original admitted course revision and evidence blocks in the private baseline archive."
+      },
+      "checks": [
+        {
+          "field": "citations.identity_valid",
+          "operator": "equals",
+          "expected": true
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "claim_support",
+          "expected": "Every prerequisite and Purchasing-tab claim must be supported by its cited passage; a valid step label alone is insufficient. Inspect the actual archived evidence."
+        }
+      ]
+    },
+    {
+      "case_id": "citation-ui-original",
+      "finding": "citation_support",
+      "stage": "conversation",
+      "baseline_turn": "navigation",
+      "message": "I am trying to assign an address at AP40-02. Where should I do that in APplus?",
+      "context": {
+        "evidence_source": "Original admitted course revision and evidence blocks in the private baseline archive."
+      },
+      "checks": [
+        {
+          "field": "citations.identity_valid",
+          "operator": "equals",
+          "expected": true
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "claim_support",
+          "expected": "Address/Picklist details require a supporting UI passage, not merely the step-identity passage. Do not infer student progress from this case."
+        }
+      ]
+    },
+    {
+      "case_id": "recall-original",
+      "finding": "retrieval_need",
+      "stage": "conversation",
+      "baseline_turn": "recall",
+      "message": "Which step did I explicitly say I was working on?",
+      "context": {
+        "history_note": "The original ambiguous journey is preserved; clean contrast cases below define exact progress expectations."
+      },
+      "checks": [
+        {
+          "field": "retrieval.searched",
+          "operator": "equals",
+          "expected": false
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "retrieval_need",
+          "expected": "Answer from student state/history. Historical AP40-02/AP40-10 ambiguity is review-only; do not score an exact recalled step on this original case."
+        }
+      ]
+    },
+    {
+      "case_id": "thanks-original",
+      "finding": "acknowledgement",
+      "stage": "conversation",
+      "baseline_turn": "thanks",
+      "message": "Thanks, that makes sense.",
+      "context": {},
+      "checks": [
+        {
+          "field": "retrieval.searched",
+          "operator": "equals",
+          "expected": false
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "acknowledgement",
+          "expected": "Briefly acknowledge; do not ask the student to classify the kind of help they need."
+        }
+      ]
+    },
+    {
+      "case_id": "role-paraphrase",
+      "finding": "extraction",
+      "stage": "onboarding",
+      "message": "At HarborWorks, my job is inventory analyst. We repair water pumps.",
+      "context": {},
+      "checks": [
+        {
+          "field": "draft.learner_role",
+          "operator": "text_equals",
+          "expected": "inventory analyst"
+        }
+      ],
+      "reviews": []
+    },
+    {
+      "case_id": "role-correction",
+      "finding": "extraction",
+      "stage": "onboarding",
+      "message": "Please change my role to procurement lead; everything else stays the same.",
+      "context": {
+        "draft": {
+          "company": "Northstar",
+          "learner_role": "production planner"
+        }
+      },
+      "checks": [
+        {
+          "field": "draft.learner_role",
+          "operator": "text_equals",
+          "expected": "procurement lead"
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "fact_fidelity",
+          "expected": "Change only the explicitly corrected role; preserve other supplied facts."
+        }
+      ]
+    },
+    {
+      "case_id": "role-quoted-negative",
+      "finding": "extraction",
+      "stage": "onboarding",
+      "message": "The example says 'production planner'; that is not my job. My role is warehouse coordinator.",
+      "context": {},
+      "checks": [
+        {
+          "field": "draft.learner_role",
+          "operator": "text_equals",
+          "expected": "warehouse coordinator"
+        }
+      ],
+      "reviews": []
+    },
+    {
+      "case_id": "question-paraphrase",
+      "finding": "assessment",
+      "stage": "conversation",
+      "message": "Remind me what outcome our business is aiming for.",
+      "context": {
+        "scenario": {
+          "company": "HarborWorks",
+          "goals": [
+            "Reduce repair lead times."
+          ]
+        }
+      },
+      "checks": [
+        {
+          "field": "assessment.understanding",
+          "operator": "one_of",
+          "expected": [
+            null,
+            "not_applicable"
+          ]
+        },
+        {
+          "field": "assessment.signal_recorded",
+          "operator": "equals",
+          "expected": false
+        }
+      ],
+      "reviews": []
+    },
+    {
+      "case_id": "assessment-mixed-claim",
+      "finding": "assessment",
+      "stage": "conversation",
+      "message": "I believe creating a delivery record automatically creates a customer too. Am I right?",
+      "context": {
+        "evidence": [
+          {
+            "label": "K1",
+            "content": "A customer must exist before a delivery record is created. Creating a delivery does not create a customer."
+          }
+        ]
+      },
+      "checks": [
+        {
+          "field": "assessment.understanding",
+          "operator": "equals",
+          "expected": "incorrect"
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "fact_fidelity",
+          "expected": "Assess the substantive false claim despite its question form. Do not classify by punctuation."
+        }
+      ]
+    },
+    {
+      "case_id": "step-arbitrary-reference",
+      "finding": "saved_state",
+      "stage": "conversation",
+      "message": "I am working on FLOW-B7 now.",
+      "context": {
+        "current_step_id": "FLOW-A2"
+      },
+      "checks": [
+        {
+          "field": "state.current_step_id",
+          "operator": "equals",
+          "expected": "FLOW-B7"
+        },
+        {
+          "field": "progress.completed_steps",
+          "operator": "equals",
+          "expected": []
+        }
+      ],
+      "reviews": []
+    },
+    {
+      "case_id": "step-hypothetical",
+      "finding": "saved_state",
+      "stage": "conversation",
+      "message": "I am still working on FLOW-A2. For later, how would someone perform FLOW-B7?",
+      "context": {
+        "current_step_id": "FLOW-A2"
+      },
+      "checks": [
+        {
+          "field": "state.current_step_id",
+          "operator": "equals",
+          "expected": "FLOW-A2"
+        },
+        {
+          "field": "progress.completed_steps",
+          "operator": "equals",
+          "expected": []
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "state_intent",
+          "expected": "The future hypothetical is not a progress change."
+        }
+      ]
+    },
+    {
+      "case_id": "step-quoted",
+      "finding": "saved_state",
+      "stage": "conversation",
+      "message": "The guide says 'now work on FLOW-B7'. I have not reached that step.",
+      "context": {
+        "current_step_id": "FLOW-A2"
+      },
+      "checks": [
+        {
+          "field": "state.current_step_id",
+          "operator": "equals",
+          "expected": "FLOW-A2"
+        },
+        {
+          "field": "progress.completed_steps",
+          "operator": "equals",
+          "expected": []
+        }
+      ],
+      "reviews": []
+    },
+    {
+      "case_id": "step-denied",
+      "finding": "saved_state",
+      "stage": "conversation",
+      "message": "I am not on FLOW-B7; I am still on FLOW-A2.",
+      "context": {
+        "current_step_id": "FLOW-A2"
+      },
+      "checks": [
+        {
+          "field": "state.current_step_id",
+          "operator": "equals",
+          "expected": "FLOW-A2"
+        }
+      ],
+      "reviews": []
+    },
+    {
+      "case_id": "step-explicit-change",
+      "finding": "saved_state",
+      "stage": "conversation",
+      "message": "I have switched to FLOW-B7 and am working on it now, but I have not completed it.",
+      "context": {
+        "current_step_id": "FLOW-A2"
+      },
+      "checks": [
+        {
+          "field": "state.current_step_id",
+          "operator": "equals",
+          "expected": "FLOW-B7"
+        },
+        {
+          "field": "progress.completed_steps",
+          "operator": "equals",
+          "expected": []
+        }
+      ],
+      "reviews": []
+    },
+    {
+      "case_id": "coach-general-no-step-id",
+      "finding": "routing",
+      "stage": "conversation",
+      "message": "Why must the customer exist before we can record a delivery?",
+      "context": {},
+      "checks": [
+        {
+          "field": "route",
+          "operator": "equals",
+          "expected": "process_coach"
+        }
+      ],
+      "reviews": []
+    },
+    {
+      "case_id": "navigation-general-no-step-id",
+      "finding": "routing",
+      "stage": "conversation",
+      "message": "I know why the customer is needed. Where do I select it on the delivery screen?",
+      "context": {},
+      "checks": [
+        {
+          "field": "route",
+          "operator": "equals",
+          "expected": "ap_plus_navigator"
+        }
+      ],
+      "reviews": []
+    },
+    {
+      "case_id": "scenario-goal",
+      "finding": "routing",
+      "stage": "conversation",
+      "message": "What is our company trying to achieve in this exercise?",
+      "context": {
+        "scenario": {
+          "company": "HarborWorks",
+          "goals": [
+            "Reduce repair lead times."
+          ]
+        }
+      },
+      "checks": [
+        {
+          "field": "route",
+          "operator": "equals",
+          "expected": "scenario"
+        }
+      ],
+      "reviews": []
+    },
+    {
+      "case_id": "recall-state-paraphrase",
+      "finding": "retrieval_need",
+      "stage": "conversation",
+      "message": "Remind me where I said I am working.",
+      "context": {
+        "current_step_id": "FLOW-A2"
+      },
+      "checks": [
+        {
+          "field": "retrieval.searched",
+          "operator": "equals",
+          "expected": false
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "state_intent",
+          "expected": "Recall FLOW-A2 without changing progress."
+        }
+      ]
+    },
+    {
+      "case_id": "recall-history-no-step-id",
+      "finding": "retrieval_need",
+      "stage": "conversation",
+      "message": "Which supplier did I say I would contact?",
+      "context": {
+        "history": [
+          {
+            "role": "user",
+            "content": "I will contact Willow Components first."
+          }
+        ]
+      },
+      "checks": [
+        {
+          "field": "retrieval.searched",
+          "operator": "equals",
+          "expected": false
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "fact_fidelity",
+          "expected": "Recall Willow Components from student history without searching documents."
+        }
+      ]
+    },
+    {
+      "case_id": "mixed-recall-new-source",
+      "finding": "retrieval_need",
+      "stage": "conversation",
+      "message": "Remind me which supplier I chose, and check the handbook for our delivery tolerance.",
+      "context": {
+        "history": [
+          {
+            "role": "user",
+            "content": "I chose Willow Components."
+          }
+        ],
+        "evidence": [
+          {
+            "label": "K1",
+            "content": "The delivery tolerance for the training exercise is two business days."
+          }
+        ]
+      },
+      "checks": [
+        {
+          "field": "retrieval.searched",
+          "operator": "equals",
+          "expected": true
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "retrieval_need",
+          "expected": "Use history for the supplier and external evidence for the new handbook fact; do not skip the whole mixed request."
+        }
+      ]
+    },
+    {
+      "case_id": "thanks-paraphrase",
+      "finding": "acknowledgement",
+      "stage": "conversation",
+      "message": "Great, that clears it up. Thank you!",
+      "context": {},
+      "checks": [
+        {
+          "field": "retrieval.searched",
+          "operator": "equals",
+          "expected": false
+        },
+        {
+          "field": "assessment.understanding",
+          "operator": "one_of",
+          "expected": [
+            null,
+            "not_applicable"
+          ]
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "acknowledgement",
+          "expected": "A short natural acknowledgement is sufficient."
+        }
+      ]
+    },
+    {
+      "case_id": "mixed-thanks-concept",
+      "finding": "routing",
+      "stage": "conversation",
+      "message": "Thanks. One more thing: why must the customer exist before a delivery?",
+      "context": {},
+      "checks": [
+        {
+          "field": "route",
+          "operator": "equals",
+          "expected": "process_coach"
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "routing",
+          "expected": "Do not discard the substantive question merely because the message begins with thanks."
+        }
+      ]
+    },
+    {
+      "case_id": "teaching-scenario-minimal",
+      "finding": "guidance",
+      "stage": "controlled_teaching",
+      "message": "Help me connect our handover problem to the exercise goal.",
+      "context": {
+        "specialist": "scenario",
+        "guidance": "minimal",
+        "scenario": {
+          "company": "Workshop training team",
+          "goals": [
+            "Reduce untraceable handovers."
+          ]
+        },
+        "evidence": [
+          {
+            "label": "K1",
+            "content": "Each asset tag refers to an existing asset. Creating a tag does not create the asset."
+          },
+          {
+            "label": "K2",
+            "content": "In the fictional Workshop console, open Asset tags and choose the existing asset in the Linked asset selector, then save."
+          },
+          {
+            "label": "K3",
+            "content": "The workshop exercise aims to reduce untraceable equipment handovers."
+          }
+        ]
+      },
+      "checks": [
+        {
+          "field": "guidance.used",
+          "operator": "equals",
+          "expected": "minimal"
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "teaching_style",
+          "expected": "One focused question; do not first disclose the solution."
+        },
+        {
+          "rubric": "claim_support",
+          "expected": "Any sourced claim must be supported by the specific cited passage. Business-purpose claims require K3, prerequisites K1, and UI details K2."
+        }
+      ]
+    },
+    {
+      "case_id": "teaching-scenario-guided",
+      "finding": "guidance",
+      "stage": "controlled_teaching",
+      "message": "Help me connect our handover problem to the exercise goal.",
+      "context": {
+        "specialist": "scenario",
+        "guidance": "guided",
+        "scenario": {
+          "company": "Workshop training team",
+          "goals": [
+            "Reduce untraceable handovers."
+          ]
+        },
+        "evidence": [
+          {
+            "label": "K1",
+            "content": "Each asset tag refers to an existing asset. Creating a tag does not create the asset."
+          },
+          {
+            "label": "K2",
+            "content": "In the fictional Workshop console, open Asset tags and choose the existing asset in the Linked asset selector, then save."
+          },
+          {
+            "label": "K3",
+            "content": "The workshop exercise aims to reduce untraceable equipment handovers."
+          }
+        ]
+      },
+      "checks": [
+        {
+          "field": "guidance.used",
+          "operator": "equals",
+          "expected": "guided"
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "teaching_style",
+          "expected": "One conceptual clue and one focused question; no procedural sequence."
+        },
+        {
+          "rubric": "claim_support",
+          "expected": "Any sourced claim must be supported by the specific cited passage. Business-purpose claims require K3, prerequisites K1, and UI details K2."
+        }
+      ]
+    },
+    {
+      "case_id": "teaching-scenario-directed",
+      "finding": "guidance",
+      "stage": "controlled_teaching",
+      "message": "Help me connect our handover problem to the exercise goal.",
+      "context": {
+        "specialist": "scenario",
+        "guidance": "directed",
+        "scenario": {
+          "company": "Workshop training team",
+          "goals": [
+            "Reduce untraceable handovers."
+          ]
+        },
+        "evidence": [
+          {
+            "label": "K1",
+            "content": "Each asset tag refers to an existing asset. Creating a tag does not create the asset."
+          },
+          {
+            "label": "K2",
+            "content": "In the fictional Workshop console, open Asset tags and choose the existing asset in the Linked asset selector, then save."
+          },
+          {
+            "label": "K3",
+            "content": "The workshop exercise aims to reduce untraceable equipment handovers."
+          }
+        ]
+      },
+      "checks": [
+        {
+          "field": "guidance.used",
+          "operator": "equals",
+          "expected": "directed"
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "teaching_style",
+          "expected": "One targeted hint with a brief explanation, without unrelated future steps."
+        },
+        {
+          "rubric": "claim_support",
+          "expected": "Any sourced claim must be supported by the specific cited passage. Business-purpose claims require K3, prerequisites K1, and UI details K2."
+        }
+      ]
+    },
+    {
+      "case_id": "teaching-scenario-explicit",
+      "finding": "guidance",
+      "stage": "controlled_teaching",
+      "message": "Help me connect our handover problem to the exercise goal.",
+      "context": {
+        "specialist": "scenario",
+        "guidance": "explicit",
+        "scenario": {
+          "company": "Workshop training team",
+          "goals": [
+            "Reduce untraceable handovers."
+          ]
+        },
+        "evidence": [
+          {
+            "label": "K1",
+            "content": "Each asset tag refers to an existing asset. Creating a tag does not create the asset."
+          },
+          {
+            "label": "K2",
+            "content": "In the fictional Workshop console, open Asset tags and choose the existing asset in the Linked asset selector, then save."
+          },
+          {
+            "label": "K3",
+            "content": "The workshop exercise aims to reduce untraceable equipment handovers."
+          }
+        ]
+      },
+      "checks": [
+        {
+          "field": "guidance.used",
+          "operator": "equals",
+          "expected": "explicit"
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "teaching_style",
+          "expected": "Direct verified help for the immediate question, with a brief explanation."
+        },
+        {
+          "rubric": "claim_support",
+          "expected": "Any sourced claim must be supported by the specific cited passage. Business-purpose claims require K3, prerequisites K1, and UI details K2."
+        }
+      ]
+    },
+    {
+      "case_id": "teaching-process_coach-minimal",
+      "finding": "guidance",
+      "stage": "controlled_teaching",
+      "message": "Why does an asset need to exist before its tag?",
+      "context": {
+        "specialist": "process_coach",
+        "guidance": "minimal",
+        "scenario": {
+          "company": "Workshop training team",
+          "goals": [
+            "Reduce untraceable handovers."
+          ]
+        },
+        "evidence": [
+          {
+            "label": "K1",
+            "content": "Each asset tag refers to an existing asset. Creating a tag does not create the asset."
+          },
+          {
+            "label": "K2",
+            "content": "In the fictional Workshop console, open Asset tags and choose the existing asset in the Linked asset selector, then save."
+          },
+          {
+            "label": "K3",
+            "content": "The workshop exercise aims to reduce untraceable equipment handovers."
+          }
+        ]
+      },
+      "checks": [
+        {
+          "field": "guidance.used",
+          "operator": "equals",
+          "expected": "minimal"
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "teaching_style",
+          "expected": "One focused question; do not first disclose the solution."
+        },
+        {
+          "rubric": "claim_support",
+          "expected": "Any sourced claim must be supported by the specific cited passage. Business-purpose claims require K3, prerequisites K1, and UI details K2."
+        }
+      ]
+    },
+    {
+      "case_id": "teaching-process_coach-guided",
+      "finding": "guidance",
+      "stage": "controlled_teaching",
+      "message": "Why does an asset need to exist before its tag?",
+      "context": {
+        "specialist": "process_coach",
+        "guidance": "guided",
+        "scenario": {
+          "company": "Workshop training team",
+          "goals": [
+            "Reduce untraceable handovers."
+          ]
+        },
+        "evidence": [
+          {
+            "label": "K1",
+            "content": "Each asset tag refers to an existing asset. Creating a tag does not create the asset."
+          },
+          {
+            "label": "K2",
+            "content": "In the fictional Workshop console, open Asset tags and choose the existing asset in the Linked asset selector, then save."
+          },
+          {
+            "label": "K3",
+            "content": "The workshop exercise aims to reduce untraceable equipment handovers."
+          }
+        ]
+      },
+      "checks": [
+        {
+          "field": "guidance.used",
+          "operator": "equals",
+          "expected": "guided"
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "teaching_style",
+          "expected": "One conceptual clue and one focused question; no procedural sequence."
+        },
+        {
+          "rubric": "claim_support",
+          "expected": "Any sourced claim must be supported by the specific cited passage. Business-purpose claims require K3, prerequisites K1, and UI details K2."
+        }
+      ]
+    },
+    {
+      "case_id": "teaching-process_coach-directed",
+      "finding": "guidance",
+      "stage": "controlled_teaching",
+      "message": "Why does an asset need to exist before its tag?",
+      "context": {
+        "specialist": "process_coach",
+        "guidance": "directed",
+        "scenario": {
+          "company": "Workshop training team",
+          "goals": [
+            "Reduce untraceable handovers."
+          ]
+        },
+        "evidence": [
+          {
+            "label": "K1",
+            "content": "Each asset tag refers to an existing asset. Creating a tag does not create the asset."
+          },
+          {
+            "label": "K2",
+            "content": "In the fictional Workshop console, open Asset tags and choose the existing asset in the Linked asset selector, then save."
+          },
+          {
+            "label": "K3",
+            "content": "The workshop exercise aims to reduce untraceable equipment handovers."
+          }
+        ]
+      },
+      "checks": [
+        {
+          "field": "guidance.used",
+          "operator": "equals",
+          "expected": "directed"
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "teaching_style",
+          "expected": "One targeted hint with a brief explanation, without unrelated future steps."
+        },
+        {
+          "rubric": "claim_support",
+          "expected": "Any sourced claim must be supported by the specific cited passage. Business-purpose claims require K3, prerequisites K1, and UI details K2."
+        }
+      ]
+    },
+    {
+      "case_id": "teaching-process_coach-explicit",
+      "finding": "guidance",
+      "stage": "controlled_teaching",
+      "message": "Why does an asset need to exist before its tag?",
+      "context": {
+        "specialist": "process_coach",
+        "guidance": "explicit",
+        "scenario": {
+          "company": "Workshop training team",
+          "goals": [
+            "Reduce untraceable handovers."
+          ]
+        },
+        "evidence": [
+          {
+            "label": "K1",
+            "content": "Each asset tag refers to an existing asset. Creating a tag does not create the asset."
+          },
+          {
+            "label": "K2",
+            "content": "In the fictional Workshop console, open Asset tags and choose the existing asset in the Linked asset selector, then save."
+          },
+          {
+            "label": "K3",
+            "content": "The workshop exercise aims to reduce untraceable equipment handovers."
+          }
+        ]
+      },
+      "checks": [
+        {
+          "field": "guidance.used",
+          "operator": "equals",
+          "expected": "explicit"
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "teaching_style",
+          "expected": "Direct verified help for the immediate question, with a brief explanation."
+        },
+        {
+          "rubric": "claim_support",
+          "expected": "Any sourced claim must be supported by the specific cited passage. Business-purpose claims require K3, prerequisites K1, and UI details K2."
+        }
+      ]
+    },
+    {
+      "case_id": "teaching-ap_plus_navigator-minimal",
+      "finding": "guidance",
+      "stage": "controlled_teaching",
+      "message": "I understand the relationship but cannot find where to link the existing asset.",
+      "context": {
+        "specialist": "ap_plus_navigator",
+        "guidance": "minimal",
+        "scenario": {
+          "company": "Workshop training team",
+          "goals": [
+            "Reduce untraceable handovers."
+          ]
+        },
+        "evidence": [
+          {
+            "label": "K1",
+            "content": "Each asset tag refers to an existing asset. Creating a tag does not create the asset."
+          },
+          {
+            "label": "K2",
+            "content": "In the fictional Workshop console, open Asset tags and choose the existing asset in the Linked asset selector, then save."
+          },
+          {
+            "label": "K3",
+            "content": "The workshop exercise aims to reduce untraceable equipment handovers."
+          }
+        ]
+      },
+      "checks": [
+        {
+          "field": "guidance.used",
+          "operator": "equals",
+          "expected": "minimal"
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "teaching_style",
+          "expected": "One focused question; do not first disclose the solution."
+        },
+        {
+          "rubric": "claim_support",
+          "expected": "Any sourced claim must be supported by the specific cited passage. Business-purpose claims require K3, prerequisites K1, and UI details K2."
+        }
+      ]
+    },
+    {
+      "case_id": "teaching-ap_plus_navigator-guided",
+      "finding": "guidance",
+      "stage": "controlled_teaching",
+      "message": "I understand the relationship but cannot find where to link the existing asset.",
+      "context": {
+        "specialist": "ap_plus_navigator",
+        "guidance": "guided",
+        "scenario": {
+          "company": "Workshop training team",
+          "goals": [
+            "Reduce untraceable handovers."
+          ]
+        },
+        "evidence": [
+          {
+            "label": "K1",
+            "content": "Each asset tag refers to an existing asset. Creating a tag does not create the asset."
+          },
+          {
+            "label": "K2",
+            "content": "In the fictional Workshop console, open Asset tags and choose the existing asset in the Linked asset selector, then save."
+          },
+          {
+            "label": "K3",
+            "content": "The workshop exercise aims to reduce untraceable equipment handovers."
+          }
+        ]
+      },
+      "checks": [
+        {
+          "field": "guidance.used",
+          "operator": "equals",
+          "expected": "guided"
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "teaching_style",
+          "expected": "One conceptual clue and one focused question; no procedural sequence."
+        },
+        {
+          "rubric": "claim_support",
+          "expected": "Any sourced claim must be supported by the specific cited passage. Business-purpose claims require K3, prerequisites K1, and UI details K2."
+        }
+      ]
+    },
+    {
+      "case_id": "teaching-ap_plus_navigator-directed",
+      "finding": "guidance",
+      "stage": "controlled_teaching",
+      "message": "I understand the relationship but cannot find where to link the existing asset.",
+      "context": {
+        "specialist": "ap_plus_navigator",
+        "guidance": "directed",
+        "scenario": {
+          "company": "Workshop training team",
+          "goals": [
+            "Reduce untraceable handovers."
+          ]
+        },
+        "evidence": [
+          {
+            "label": "K1",
+            "content": "Each asset tag refers to an existing asset. Creating a tag does not create the asset."
+          },
+          {
+            "label": "K2",
+            "content": "In the fictional Workshop console, open Asset tags and choose the existing asset in the Linked asset selector, then save."
+          },
+          {
+            "label": "K3",
+            "content": "The workshop exercise aims to reduce untraceable equipment handovers."
+          }
+        ]
+      },
+      "checks": [
+        {
+          "field": "guidance.used",
+          "operator": "equals",
+          "expected": "directed"
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "teaching_style",
+          "expected": "One targeted hint with a brief explanation, without unrelated future steps."
+        },
+        {
+          "rubric": "claim_support",
+          "expected": "Any sourced claim must be supported by the specific cited passage. Business-purpose claims require K3, prerequisites K1, and UI details K2."
+        }
+      ]
+    },
+    {
+      "case_id": "teaching-ap_plus_navigator-explicit",
+      "finding": "guidance",
+      "stage": "controlled_teaching",
+      "message": "I understand the relationship but cannot find where to link the existing asset.",
+      "context": {
+        "specialist": "ap_plus_navigator",
+        "guidance": "explicit",
+        "scenario": {
+          "company": "Workshop training team",
+          "goals": [
+            "Reduce untraceable handovers."
+          ]
+        },
+        "evidence": [
+          {
+            "label": "K1",
+            "content": "Each asset tag refers to an existing asset. Creating a tag does not create the asset."
+          },
+          {
+            "label": "K2",
+            "content": "In the fictional Workshop console, open Asset tags and choose the existing asset in the Linked asset selector, then save."
+          },
+          {
+            "label": "K3",
+            "content": "The workshop exercise aims to reduce untraceable equipment handovers."
+          }
+        ]
+      },
+      "checks": [
+        {
+          "field": "guidance.used",
+          "operator": "equals",
+          "expected": "explicit"
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "teaching_style",
+          "expected": "Direct verified help for the immediate question, with a brief explanation."
+        },
+        {
+          "rubric": "claim_support",
+          "expected": "Any sourced claim must be supported by the specific cited passage. Business-purpose claims require K3, prerequisites K1, and UI details K2."
+        }
+      ]
+    },
+    {
+      "case_id": "citation-partial-no-step-id",
+      "finding": "citation_support",
+      "stage": "conversation",
+      "message": "Does creating a repair booking also create the machine, and where is the machine selected?",
+      "context": {
+        "evidence": [
+          {
+            "label": "K1",
+            "content": "A repair booking refers to a machine that already exists."
+          },
+          {
+            "label": "K2",
+            "content": "In the fictional Repair desk, choose an existing machine in the Machine selector before saving the booking."
+          }
+        ]
+      },
+      "checks": [
+        {
+          "field": "citations.identity_valid",
+          "operator": "equals",
+          "expected": true
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "claim_support",
+          "expected": "Prerequisite and Machine-selector claims need their own supporting passages. A shared topic or document title is insufficient; unsupported claims must be qualified or omitted."
+        }
+      ]
+    },
+    {
+      "case_id": "unsupported-original-control",
+      "finding": "citation_support",
+      "stage": "conversation",
+      "baseline_turn": "unsupported",
+      "message": "What exact TCP port is the APplus database configured to use?",
+      "context": {
+        "evidence_source": "The original admitted course does not establish server port configuration."
+      },
+      "checks": [
+        {
+          "field": "assessment.signal_recorded",
+          "operator": "equals",
+          "expected": false
+        }
+      ],
+      "reviews": [
+        {
+          "rubric": "claim_support",
+          "expected": "Preserve the original abstention: do not invent an exact port or cite a passage that does not establish it. Retrieval failure is not student failure."
+        }
+      ]
+    }
+  ]
+}

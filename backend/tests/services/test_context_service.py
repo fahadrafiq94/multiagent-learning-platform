@@ -1051,6 +1051,7 @@ async def test_build_de_escalates_on_productive_reasoning() -> None:
         user,
         guidance_level=(GuidanceLevel.EXPLICIT),
         successful_independent_steps=2,
+        consecutive_productive_attempts=2,
     )
 
     context = await context_service.build(

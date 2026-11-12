@@ -1,0 +1,42 @@
+{
+  "version": "student-interactions-http-smoke-v1",
+  "kind": "synthetic development HTTP verification; not held-out acceptance",
+  "persona": "UrbanCycle purchasing coordinator; custom bicycles; supplier delays",
+  "turns": [
+    {
+      "id": "scenario",
+      "message": "UrbanCycle assembles custom bicycles. I am the purchasing coordinator. Late supplier deliveries cause component shortages and delayed customer orders. Our goal is to reduce shortages and improve delivery reliability.",
+      "expected": "Extract the explicitly supplied role, company, problem and goal; offer the draft for review. Do not auto-confirm it."
+    },
+    {
+      "id": "confirmation",
+      "message": "Yes, that summary is accurate. I confirm this scenario without any changes.",
+      "expected": "Persist the reviewed UrbanCycle purchasing-coordinator scenario only after this confirmation."
+    },
+    {
+      "id": "concept_and_step",
+      "message": "I am now working on AP40-10. Why must the item and supplier already exist before creating their relationship record?",
+      "expected": "Save AP40-10 before grounding and route conceptual prerequisites to Process Coach; admit external course evidence through the normal hybrid planner."
+    },
+    {
+      "id": "hint_followup",
+      "message": "One hint please; I still do not understand that relationship.",
+      "expected": "Resolve the conceptual topic from recent dialogue and route to Process Coach. Use fresh authorized evidence or valid reuse, without changing the saved current step. Teaching disclosure remains a separate review."
+    },
+    {
+      "id": "step_recall",
+      "message": "Which step did I explicitly say I am working on?",
+      "expected": "Answer AP40-10 from owned saved state with one supervisor call, no specialist, planner, embedding, external search, grading or summary call."
+    },
+    {
+      "id": "thanks",
+      "message": "Thank you, that is clear now.",
+      "expected": "Give a brief natural acknowledgement with one supervisor call, no specialist, retrieval, grading or summary call."
+    },
+    {
+      "id": "mixed_recall_and_source",
+      "message": "Thanks. Remind me of my current step, and tell me the prerequisites listed for AP40-02.",
+      "expected": "Preserve both requests, route substantive prerequisites to Process Coach and use authorized course evidence for the new external facts. Do not change AP40-10 to AP40-02."
+    }
+  ]
+}

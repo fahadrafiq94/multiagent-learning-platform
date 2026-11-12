@@ -1,0 +1,23 @@
+{
+  "planner": {
+    "model": "qwen3.5:4b",
+    "timeout_seconds": 60,
+    "max_tokens": 650
+  },
+  "planner_url": "http://host.docker.internal:11434",
+  "prompt": {
+    "max_context_tokens": 8192,
+    "reserved_output_tokens": 2048,
+    "characters_per_token": 4,
+    "message_overhead_tokens": 32
+  },
+  "max_evidence_chars": 8000,
+  "bindings": [
+    {
+      "user_id": "00000000-0000-0000-0000-000000000001",
+      "collection_id": "00000000-0000-0000-0000-000000000002",
+      "access_domain": "example:course",
+      "namespace": "example"
+    }
+  ]
+}

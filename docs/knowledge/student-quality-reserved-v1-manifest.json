@@ -1,0 +1,24 @@
+{
+  "version": "student-quality-reserved-v1",
+  "prepared_on": "2026-11-09",
+  "split": "heldout",
+  "case_count": 16,
+  "sha256": "5c3b937543310e723ee7f3cea1f90d4ab4993f33f8d5ee757f6d71c3887477fd",
+  "coverage": {
+    "extraction": 2,
+    "assessment": 2,
+    "saved_state": 2,
+    "routing": 3,
+    "guidance": 1,
+    "citation_support": 2,
+    "retrieval_need": 2,
+    "acknowledgement": 2
+  },
+  "private_path": "backend/reports/student-quality-reserved-v1-20261109/cases.json",
+  "status": "consumed",
+  "model_calls": 21,
+  "authorship": "Assistant-authored; not independently authored or pedagogically approved.",
+  "use": "Keep out of development prompts/tuning. Review and explicitly enable held-out execution at acceptance; consumed cases become development regressions.",
+  "acceptance_output": "backend\\reports\\step6-reserved-acceptance-20261110",
+  "acceptance_status": "completed_review_pending"
+}

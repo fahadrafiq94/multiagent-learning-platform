@@ -24,16 +24,15 @@ from app.context.policies import (
 from app.context.token_estimator import (
     ApproximateTokenEstimator,
 )
+from app.knowledge.integration import SpecialistGroundingService
 from app.orchestration.graph import (
     build_orchestration_graph,
 )
 from app.orchestration.service import (
     OrchestrationService,
 )
-from app.repositories.in_memory import (
-    InMemoryRepositories,
-    create_in_memory_repositories,
-)
+from app.repositories.bundle import RepositoryBundle
+from app.repositories.in_memory import create_in_memory_repositories
 from app.services.context_service import (
     ContextService,
 )
@@ -70,13 +69,10 @@ from app.services.user_context_service import (
 @dataclass(slots=True)
 class OrchestrationRuntime:
     """
-    Long-lived runtime services for the current in-memory application.
-
-    PostgreSQL will later replace the repository implementation without
-    changing the orchestration contracts.
+    Long-lived services with injectable storage implementations.
     """
 
-    repositories: InMemoryRepositories
+    repositories: RepositoryBundle
 
     model_service: ModelService
 
@@ -103,12 +99,14 @@ class OrchestrationRuntime:
     orchestration_service: OrchestrationService
 
     graph: Any
+    grounding_service: SpecialistGroundingService | None = None
 
 
 def build_orchestration_runtime(
     *,
     model_service: ModelService,
-    repositories: (InMemoryRepositories | None) = None,
+    repositories: (RepositoryBundle | None) = None,
+    grounding_service: SpecialistGroundingService | None = None,
 ) -> OrchestrationRuntime:
     runtime_repositories = repositories or create_in_memory_repositories()
 
@@ -116,6 +114,7 @@ def build_orchestration_runtime(
         session_repository=(runtime_repositories.sessions),
         session_context_repository=(runtime_repositories.session_contexts),
         conversation_repository=(runtime_repositories.conversations),
+        session_initializer=runtime_repositories.session_initializer,
     )
 
     user_context_service = UserContextService(
@@ -125,6 +124,8 @@ def build_orchestration_runtime(
     session_context_service = SessionContextService(
         repository=(runtime_repositories.session_contexts),
     )
+    if grounding_service is not None:
+        grounding_service.session_context_service = session_context_service
     session_state_update_service = SessionStateUpdateService(
         session_context_service=(session_context_service),
     )
@@ -203,11 +204,13 @@ def build_orchestration_runtime(
         onboarding_service=(scenario_onboarding_service),
         onboarding_interaction_service=(interaction_service),
         user_context_service=(user_context_service),
+        grounding_service=grounding_service,
     )
 
     orchestration_service = OrchestrationService(
         graph=graph,
         identity_repository=(runtime_repositories.identities),
+        turn_store=runtime_repositories.turns,
     )
 
     return OrchestrationRuntime(
@@ -225,15 +228,16 @@ def build_orchestration_runtime(
         context_policy_service=(context_policy_service),
         orchestration_service=(orchestration_service),
         graph=graph,
+        grounding_service=grounding_service,
     )
 
 
 @lru_cache(maxsize=1)
 def get_orchestration_runtime() -> OrchestrationRuntime:
     """
-    Return the process-local runtime.
+    Return the legacy in-memory runtime for direct callers.
 
-    This is intentionally cached while repositories are in memory.
+    HTTP uses its lifespan-owned runtime instead of this compatibility cache.
     """
 
     return build_orchestration_runtime(

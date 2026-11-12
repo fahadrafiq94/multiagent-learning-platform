@@ -16,7 +16,9 @@ from app.domain.guidance import (
     GuidanceLevel,
 )
 from app.domain.guidance_policy import (
+    ResponseSignalUpdate,
     assessment_signal,
+    grounded_abstention_signal,
     select_guidance,
 )
 
@@ -45,6 +47,10 @@ def assessment(
     misconception: bool = False,
 ) -> StudentResponseAssessment:
     return StudentResponseAssessment(
+        assessability="assessable"
+        if understanding != UnderstandingLevel.NOT_APPLICABLE
+        else "not_assessable",
+        student_claim="Test claim." if understanding != UnderstandingLevel.NOT_APPLICABLE else None,
         understanding=understanding,
         misconception_detected=misconception,
         reason="Test judgment.",
@@ -244,6 +250,7 @@ def test_productive_reasoning_de_escalates_exactly_one_step(
             hint_state(
                 guidance_level=base,
                 successful_independent_steps=2,
+                consecutive_productive_attempts=2,
             )
         ),
         session_context=(session_context()),
@@ -312,6 +319,7 @@ def test_de_escalation_is_at_most_one_step_even_after_long_streak() -> None:
             hint_state(
                 guidance_level=(GuidanceLevel.EXPLICIT),
                 successful_independent_steps=20,
+                consecutive_productive_attempts=20,
             )
         ),
         session_context=(session_context()),
@@ -329,6 +337,7 @@ def test_select_guidance_does_not_mutate_inputs() -> None:
     original_hint = hint_state(
         guidance_level=(GuidanceLevel.EXPLICIT),
         successful_independent_steps=2,
+        consecutive_productive_attempts=2,
     )
 
     original_session = session_context()
@@ -356,10 +365,9 @@ def test_select_guidance_does_not_mutate_inputs() -> None:
     "understanding",
     [
         UnderstandingLevel.CORRECT,
-        UnderstandingLevel.PARTIALLY_CORRECT,
     ],
 )
-def test_correct_and_partial_assessments_record_progress(
+def test_correct_assessments_record_progress(
     understanding: UnderstandingLevel,
 ) -> None:
     update = assessment_signal(assessment(understanding))
@@ -390,7 +398,7 @@ def test_unproductive_assessments_record_struggle(
     assert update.reset_struggle is False
 
 
-def test_misconception_does_not_change_signal() -> None:
+def test_correct_with_misconception_does_not_reward_success() -> None:
     update = assessment_signal(
         assessment(
             UnderstandingLevel.CORRECT,
@@ -398,9 +406,25 @@ def test_misconception_does_not_change_signal() -> None:
         ),
     )
 
-    assert update.success_delta == 1
+    assert update.success_delta == 0
 
     assert update.struggle_delta == 0
+
+
+def test_partial_understanding_does_not_count_as_independent_success():
+    update = assessment_signal(assessment(UnderstandingLevel.PARTIALLY_CORRECT))
+    assert update.success_delta == update.struggle_delta == 0
+    assert update.reset_productive is True and update.reset_struggle is False
+
+
+def test_historical_successes_alone_do_not_lower_support():
+    decision = select_guidance(
+        hint_state=hint_state(
+            guidance_level=GuidanceLevel.EXPLICIT, successful_independent_steps=20
+        ),
+        session_context=session_context(),
+    )
+    assert decision.level == GuidanceLevel.EXPLICIT
 
 
 @pytest.mark.parametrize(
@@ -421,3 +445,52 @@ def test_no_signal_inputs_are_no_ops(signal_input: object) -> None:
     assert update.struggle_delta == 0
 
     assert update.reset_struggle is False
+
+
+@pytest.mark.parametrize(
+    "rag_status,support_abstained,teaching_abstained,expected",
+    [
+        pytest.param(
+            "found",
+            True,
+            False,
+            ResponseSignalUpdate(struggle_delta=1, reset_productive=True),
+            id=("found_support_abstained"),
+        ),
+        pytest.param(
+            "found",
+            False,
+            True,
+            ResponseSignalUpdate(struggle_delta=1, reset_productive=True),
+            id=("found_teaching_abstained"),
+        ),
+        pytest.param(
+            "found",
+            True,
+            True,
+            ResponseSignalUpdate(struggle_delta=1, reset_productive=True),
+            id=("found_both_abstained"),
+        ),
+        pytest.param("found", False, False, ResponseSignalUpdate(), id=("found_verified")),
+        pytest.param(
+            "no_evidence", True, False, ResponseSignalUpdate(), id=("no_evidence_abstained")
+        ),
+        pytest.param(
+            "unavailable", True, False, ResponseSignalUpdate(), id=("unavailable_abstained")
+        ),
+        pytest.param("error", True, False, ResponseSignalUpdate(), id=("error_abstained")),
+        pytest.param(None, True, False, ResponseSignalUpdate(), id=("no_rag_status")),
+    ],
+)
+def test_grounded_abstention_signal_only_moves_on_found(
+    rag_status: str | None,
+    support_abstained: bool,
+    teaching_abstained: bool,
+    expected: ResponseSignalUpdate,
+) -> None:
+    update = grounded_abstention_signal(
+        rag_status=rag_status,
+        support_abstained=support_abstained,
+        teaching_abstained=teaching_abstained,
+    )
+    assert update == expected

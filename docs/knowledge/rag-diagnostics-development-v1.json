@@ -1,0 +1,56 @@
+{
+  "version": "diagnostics-development-v1",
+  "frozen_before_execution": true,
+  "collection_id": "89c7a7b4-70d8-58d4-913b-7cde21bf3a40",
+  "revision_id": "78085670-9cba-5d2d-8de2-df3d2db092af",
+  "access_domain": "course:ap40",
+  "namespace": "ap40",
+  "generic_document_id": "199351e7-83c7-4dd4-9694-e741d6be0093",
+  "generic_text": "Training archive policy for the fictional Elm classroom.\nExported practice files are retained for fourteen days.\nPersonal scratch notes are deleted after seven days.\nA mentor may request a practice-file extension before the fourteen-day deadline.",
+  "retrieval_config": {
+    "candidate_limit": 40,
+    "min_vector_similarity": 0.5,
+    "lexical_vector_floor": 0.35,
+    "rrf_constant": 60,
+    "max_citations_per_item": 8
+  },
+  "cases": [
+    {
+      "case_id": "dev-authoritative-object",
+      "split": "development",
+      "specialist": "scenario",
+      "question": "Which primary business object is listed for AP40-04?",
+      "expected_references": ["AP40-04"],
+      "allowed_actions": ["metadata_lookup"],
+      "expected_statuses": ["found"]
+    },
+    {
+      "case_id": "dev-authoritative-prerequisite",
+      "split": "development",
+      "specialist": "process_coach",
+      "question": "Use the prerequisites field to tell me what must already exist for AP40-09.",
+      "expected_references": ["AP40-09"],
+      "allowed_actions": ["metadata_lookup"],
+      "expected_statuses": ["found"]
+    },
+    {
+      "case_id": "dev-authoritative-phase",
+      "split": "development",
+      "specialist": "ap_plus_navigator",
+      "question": "What is the phase field for AP40-11?",
+      "expected_references": ["AP40-11"],
+      "allowed_actions": ["metadata_lookup"],
+      "expected_statuses": ["found"]
+    },
+    {
+      "case_id": "dev-generic-missing-table",
+      "split": "development",
+      "corpus": "generic",
+      "specialist": "scenario",
+      "question": "Which PostgreSQL table contains the Elm scratch notes?",
+      "answerable": false,
+      "allowed_actions": ["document_search", "clarify"],
+      "expected_statuses": ["no_evidence", "clarify"]
+    }
+  ]
+}

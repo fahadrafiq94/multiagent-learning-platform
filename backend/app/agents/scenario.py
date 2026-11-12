@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from typing import Any, cast
 from uuid import UUID
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from app.agents.context_prompt import (
-    context_view_to_prompt_text,
-)
 from app.agents.exceptions import (
     AgentExecutionError,
 )
+from app.agents.grounding import build_specialist_request
 from app.agents.policies import (
     RESPONSE_ASSESSMENT_INSTRUCTIONS,
     SCENARIO_GUIDANCE,
@@ -24,7 +23,6 @@ from app.agents.schemas import (
     AgentName,
     AgentRequest,
     AgentResponse,
-    SpecialistAgentOutput,
 )
 from app.agents.state_update_prompt import (
     state_update_proposal_instructions,
@@ -125,6 +123,39 @@ Rules:
    value, extract the corrected value.
 
 10. Return only data that conforms to the supplied JSON schema.
+
+11. Check EACH scalar independently before returning. A message can supply both
+    company_context and learner_role even if the business problem is still missing.
+    Never omit a field: use null only when that fact was not supplied or corrected.
+    company_context must combine the supplied company name WITH its explicit
+    business/activity description, even if those are in separate sentences. Do
+    not reduce a supplied business description to just the company name.
+    Extract the student's own role, not a role in a quoted example or someone else's job.
+    Do not invent a formal title from an implied duty. Keep existing facts unchanged
+    when the current message does not supply a replacement.
+
+Examples (only the stated fields change; other scalar fields are null):
+Full scenario example:
+"Quartz Labs tests coatings. I am a lab coordinator. Repeated sample mix-ups
+delay reports. We want fewer mix-ups."
+-> company_context: "Quartz Labs tests coatings.";
+   learner_role: "lab coordinator";
+   business_problem: "Repeated sample mix-ups delay reports.";
+   business_goals: ["Reduce sample mix-ups."]; constraints: []; proposed_facts: [].
+The business problem describes the adverse situation and its consequence, even
+when the student never uses the word "problem". Capture it in business_problem;
+do not leave that slot null merely because you also summarized the company.
+
+Partial/correction examples:
+- "I work as a cost accountant at Amber Tools. We service industrial pumps."
+  -> learner_role: "cost accountant";
+     company_context: "Amber Tools services industrial pumps.".
+- "The sample describes a technician, but I am the customer-service lead."
+  -> learner_role: "customer-service lead".
+- "Correction: I am the logistics coordinator, not the cost accountant."
+  -> learner_role: "logistics coordinator".
+- "What does a cost accountant do?"
+  -> learner_role: null. A question about a role does not assign it to the student.
 
 Length limits:
 - company_context and business_problem: at most 3500 characters each.
@@ -229,8 +260,46 @@ UNCLEAR
 """.strip()
 
 
+def onboarding_generation_schema(model: type[BaseModel]) -> dict[str, Any]:
+    """Avoid Ollama's failing large string repetition grammar during onboarding.
+
+    JSON types, required fields, enums and minimum lengths remain constrained.
+    The original Pydantic models still enforce ALL length limits before any
+    extracted draft or review decision can be used by the application.
+    """
+
+    def visit(value):
+        if isinstance(value, dict):
+            result = {key: visit(item) for key, item in value.items() if key != "maxLength"}
+            if "properties" in result:
+                # Require an explicit value/null for every extraction/review field.
+                # Stored models and their historical defaults remain compatible.
+                result["required"] = list(result["properties"])
+                if "company_context" in result["properties"]:
+                    result["properties"]["company_context"]["description"] = (
+                        "Company name AND explicitly supplied business/activity description "
+                        "from the current message; retain both, not only the name. "
+                        "Null if no company information is supplied or corrected."
+                    )
+                    result["properties"]["business_problem"]["description"] = (
+                        "The explicitly stated adverse situation AND its consequence in the "
+                        "current message, even without the word problem. Capture this "
+                        "independently of company_context and goals. Null only if absent."
+                    )
+                    result["properties"]["business_goals"]["description"] = (
+                        "Every NEW desired business outcome explicitly supplied in this "
+                        "message. Use an empty list if no new goal is stated."
+                    )
+            return result
+        if isinstance(value, list):
+            return [visit(item) for item in value]
+        return value
+
+    return cast(dict[str, Any], visit(model.model_json_schema()))
+
+
 class ScenarioAgent:
-    EXTRACTION_POLICY_VERSION = "scenario-extraction-v1"
+    EXTRACTION_POLICY_VERSION = "scenario-extraction-v2-complete-fields"
 
     REVIEW_POLICY_VERSION = "scenario-review-v1"
 
@@ -280,32 +349,20 @@ class ScenarioAgent:
             f"{RESPONSE_ASSESSMENT_INSTRUCTIONS}"
         )
 
-        context_text = context_view_to_prompt_text(request.context)
-
-        if context_text:
-            system_prompt = f"{system_prompt}\n\nFILTERED RUNTIME CONTEXT:\n{context_text}"
-
-        model_request = ModelChatRequest(
-            messages=[
-                ModelMessage(
-                    role="system",
-                    content=system_prompt,
-                ),
-                ModelMessage(
-                    role="user",
-                    content=(request.user_message),
-                ),
-            ],
+        prepared = build_specialist_request(
+            request,
+            system_prompt,
             model=self._model,
-            response_schema=(SpecialistAgentOutput.model_json_schema()),
-            metadata={
-                "task": ("scenario_agent_response"),
-                "output_contract": ("specialist-agent-v2"),
-            },
+            task="scenario_agent_response",
+            agent=self.name,
         )
 
+        if fallback := prepared.no_evidence_response():
+            return fallback
+
         try:
-            model_response = await self._model_service.generate(model_request)
+            model_response = await self._model_service.generate(prepared.model_request)
+            prepared.check_usage(model_response.usage)
 
         except ModelServiceError as exc:
             raise AgentExecutionError(
@@ -325,7 +382,7 @@ class ScenarioAgent:
             )
 
         try:
-            output = SpecialistAgentOutput.model_validate_json(raw_content)
+            output = prepared.parse(raw_content)
 
         except ValidationError as exc:
             raise AgentExecutionError(
@@ -337,12 +394,15 @@ class ScenarioAgent:
                 },
             ) from exc
 
+        output = await prepared.verify(output, self._model_service)
         return AgentResponse(
             agent=self.name,
             content=output.content,
             state_update_proposal=(output.state_update_proposal),
             response_assessment=(output.response_assessment),
+            source_references=prepared.references(output),
             metadata={
+                **prepared.metadata(output),
                 "model": (model_response.model),
                 "model_provider": (model_response.provider),
                 "model_latency_ms": (model_response.latency_ms),
@@ -350,7 +410,11 @@ class ScenarioAgent:
                 "guidance_level": (request.guidance_level.value),
                 "state_update_operation_count": (len(output.state_update_proposal.operations)),
                 "response_assessed": (output.response_assessment is not None),
-                "output_contract": ("specialist-agent-v2"),
+                "output_contract": (
+                    "specialist-agent-v4-claim-support"
+                    if prepared.diagnostics
+                    else "specialist-agent-v2"
+                ),
             },
         )
 
@@ -441,7 +505,7 @@ class ScenarioAgent:
             ],
             model=self._model,
             temperature=0.0,
-            response_schema=(ScenarioReviewDecision.model_json_schema()),
+            response_schema=onboarding_generation_schema(ScenarioReviewDecision),
             metadata={
                 "task": ("scenario_review_intent"),
                 "policy_version": (self.REVIEW_POLICY_VERSION),
@@ -513,7 +577,7 @@ class ScenarioAgent:
             ],
             model=self._model,
             temperature=0.0,
-            response_schema=(ScenarioDraftExtraction.model_json_schema()),
+            response_schema=onboarding_generation_schema(ScenarioDraftExtraction),
             metadata={
                 "task": ("scenario_draft_extraction"),
                 "policy_version": (self.EXTRACTION_POLICY_VERSION),

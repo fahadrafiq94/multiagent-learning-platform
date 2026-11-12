@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.context.agent_views import (
     AgentContextView,
     ContextTarget,
+    RoutingFacts,
     RuntimeSessionContext,
     ScenarioSetupContext,
 )
@@ -22,7 +23,7 @@ class AgentContextPolicyService:
     a filtered request-scoped projection for one runtime consumer.
     """
 
-    POLICY_VERSION = "agent-context-policy-v1"
+    POLICY_VERSION = "agent-context-policy-v2-routing"
 
     def select(
         self,
@@ -57,7 +58,7 @@ class AgentContextPolicyService:
         - ScenarioDraft
         - profile
         - progress
-        - conversation history
+        - full conversation history (only four bounded recent messages are included)
         - adaptations
         - knowledge chunks
         """
@@ -66,6 +67,15 @@ class AgentContextPolicyService:
             context.session_context,
             include_unresolved_questions=False,
         )
+        if runtime_session is not None:
+            runtime_session.current_objective = (
+                runtime_session.current_objective[:600]
+                if runtime_session.current_objective
+                else None
+            )
+            runtime_session.active_blocker = (
+                runtime_session.active_blocker[:600] if runtime_session.active_blocker else None
+            )
 
         sections = [
             "current_message",
@@ -74,12 +84,27 @@ class AgentContextPolicyService:
         if runtime_session is not None:
             sections.append("runtime_session")
 
+        facts = RoutingFacts.from_card(context.scenario_card)
+        # Topic resolution needs recent dialogue, not a full transcript or sources.
+        recent = [
+            message.model_copy(
+                update={"content": message.content[:450], "source_references": []}, deep=True
+            )
+            for message in context.recent_messages[-4:]
+        ]
+        if facts is not None:
+            sections.append("routing_facts")
+        if recent:
+            sections.append("recent_messages")
+
         return AgentContextView(
             target=(ContextTarget.ORCHESTRATOR),
             user_id=context.user_id,
             session_id=context.session_id,
             current_message=(context.current_message),
             runtime_session=runtime_session,
+            routing_facts=facts,
+            recent_messages=recent,
             policy_version=(self.POLICY_VERSION),
             included_sections=sections,
         )

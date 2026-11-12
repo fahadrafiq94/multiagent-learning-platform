@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 from pydantic import (
     BaseModel,
@@ -8,12 +9,15 @@ from pydantic import (
     field_validator,
 )
 
+from app.context.schemas import MessageSourceReference
 from app.orchestration.state import (
     RouteName,
 )
 
 
 class OrchestrationRequest(BaseModel):
+    # Required by the durable HTTP workflow; optional for earlier in-memory callers.
+    request_id: UUID | None = None
     session_id: str = Field(min_length=1)
 
     student_id: str = Field(min_length=1)
@@ -57,3 +61,4 @@ class OrchestrationResponse(BaseModel):
     error: str | None = None
 
     metadata: dict[str, Any] = Field(default_factory=dict)
+    source_references: list[MessageSourceReference] = Field(default_factory=list)

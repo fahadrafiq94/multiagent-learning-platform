@@ -1,0 +1,25 @@
+# Optional experimental RAG only. Existing stack behavior is unchanged without this overlay.
+# Keep RAG_ENABLED=false until an explicit pilot configuration/quality decision.
+services:
+  backend:
+    environment:
+      RAG_ENABLED: ${RAG_ENABLED:-false}
+      RAG_CONFIG_FILE: /rag/config.json
+      RAG_DATABASE_HOST: postgres
+      RAG_READER_PASSWORD: ${KNOWLEDGE_READER_PASSWORD:?Reader password is required}
+      KNOWLEDGE_CACHE_ENABLED: ${KNOWLEDGE_CACHE_ENABLED:-false}
+      KNOWLEDGE_CACHE_REDIS_HOST: redis
+      KNOWLEDGE_CACHE_REDIS_PORT: 6379
+      KNOWLEDGE_CACHE_REDIS_PASSWORD: ${KNOWLEDGE_REDIS_PASSWORD:?Redis password is required}
+    volumes:
+      - type: bind
+        source: ${RAG_CONFIG_PATH:?Set an absolute trusted server binding file path}
+        target: /rag/config.json
+        read_only: true
+
+  knowledge-retrieve:
+    # Allows the explicit read-only cache-check entry point in this operator image.
+    environment:
+      KNOWLEDGE_CACHE_REDIS_HOST: redis
+      KNOWLEDGE_CACHE_REDIS_PORT: 6379
+      KNOWLEDGE_CACHE_REDIS_PASSWORD: ${KNOWLEDGE_REDIS_PASSWORD:?Redis password is required}

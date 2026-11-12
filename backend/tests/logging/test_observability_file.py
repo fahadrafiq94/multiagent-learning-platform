@@ -140,3 +140,30 @@ def test_reconfigure_replaces_existing_file_handler(
     assert len(first.read_text(encoding="utf-8").strip().splitlines()) == 1
 
     assert len(second.read_text(encoding="utf-8").strip().splitlines()) == 1
+
+
+def test_rotation_bounds_storage_and_unsetting_closes_export(
+    request_event_logger,
+    monkeypatch,
+    tmp_path,
+    caplog,
+):
+    target = tmp_path / "nested" / "events.jsonl"
+    monkeypatch.setattr(settings, "observability_log_file", str(target))
+    monkeypatch.setattr(settings, "observability_log_max_bytes", 1024)
+    monkeypatch.setattr(settings, "observability_log_backup_count", 2)
+    configure_logging()
+    with caplog.at_level(logging.INFO, logger=REQUEST_EVENT_LOGGER_NAME):
+        for _ in range(80):
+            _emit_sample_event()
+    files = list(target.parent.glob("events.jsonl*"))
+    assert len(files) == 3
+    assert all(path.stat().st_size <= 1024 for path in files)
+    assert all(
+        json.loads(line)["outcome"] == "completed"
+        for path in files
+        for line in path.read_text().splitlines()
+    )
+    monkeypatch.setattr(settings, "observability_log_file", None)
+    configure_logging()
+    assert not any(isinstance(h, logging.FileHandler) for h in request_event_logger.handlers)

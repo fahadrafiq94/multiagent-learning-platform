@@ -9,10 +9,10 @@ from app.agents.orchestrator import (
     ORCHESTRATOR_SYSTEM_PROMPT,
     OrchestratorAgent,
     OrchestratorRoutingError,
+    routing_generation_schema,
 )
 from app.agents.routing import (
     OrchestratorRequest,
-    RoutingDecision,
 )
 from app.services.model_service import ModelService
 from app.services.model_service.exceptions import (
@@ -147,7 +147,7 @@ async def test_orchestrator_requests_structured_routing_output() -> None:
 
     assert generated_request.response_schema is not None
 
-    expected_schema = RoutingDecision.model_json_schema()
+    expected_schema = routing_generation_schema()
 
     assert generated_request.response_schema == expected_schema
 

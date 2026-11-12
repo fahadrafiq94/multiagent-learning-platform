@@ -1,0 +1,7 @@
+{
+  "candidate_limit": 40,
+  "min_vector_similarity": 0.5,
+  "lexical_vector_floor": 0.35,
+  "rrf_constant": 60,
+  "max_citations_per_item": 8
+}

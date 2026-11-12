@@ -5,22 +5,47 @@ __pycache__/
 
 # Environment
 .env
-.env.production
-.env.local
+.env.*
+!.env.example
+!.env.*.example
+.rag-runtime.json
+.knowledge-intake.json
+.knowledge-inbox/
+.knowledge-sources/
 
 # Generated reports / scratch output
 backend/reports/
+*.log
 
 # IDE
 .vscode/
+.idea/
+
+# Local assistant permissions
+.claude/settings.local.json
 
 # Testing
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+pytest-of-*/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Internal documentation
+/docs/plans/
+/docs/checkpoints/
+/docs/demos/
+/docs/research-notes.md
 
 # OS
 .DS_Store
 Thumbs.db
 
 CLAUDE.md
+
+# Transient application credential-bootstrap lock
+backend/.application-bootstrap.lock
+backend/.application-credentials-*

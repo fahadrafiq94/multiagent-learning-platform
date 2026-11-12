@@ -13,6 +13,7 @@ from app.agents.schemas import (
 )
 from app.context.schemas import (
     AgentContext,
+    MessageSourceReference,
 )
 from app.context.state_updates import (
     SessionStateUpdateProposal,
@@ -50,6 +51,8 @@ class OrchestrationState(
     # Input
     user_message: str
     current_message_id: UUID
+    # Set internally after atomic turn admission, never from client metadata.
+    turn_managed: bool
 
     # Context
     base_context: AgentContext
@@ -63,6 +66,7 @@ class OrchestrationState(
     selected_agent: AgentName
 
     agent_response: str
+    source_references: list[MessageSourceReference]
 
     state_update_proposal: SessionStateUpdateProposal | None
 

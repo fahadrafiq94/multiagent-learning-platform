@@ -1,0 +1,23 @@
+{
+  "bindings": [
+    {
+      "collection_id": "00000000-0000-0000-0000-000000000001",
+      "scope": {
+        "access_domain": "example:course",
+        "can_manage_knowledge": true
+      },
+      "manager_user_ids": ["00000000-0000-0000-0000-000000000002"],
+      "index": {
+        "embedding": {
+          "provider": "ollama",
+          "model": "nomic-embed-text-v2-moe:latest",
+          "revision": "REPLACE_WITH_INSTALLED_MODEL_DIGEST",
+          "dimension": 768,
+          "normalized": true,
+          "query_prefix": "search_query: ",
+          "document_prefix": "search_document: "
+        }
+      }
+    }
+  ]
+}
