@@ -1,0 +1,18 @@
+{
+  "version": "checkpoint-6-smoke-v1",
+  "collection_id": "89c7a7b4-70d8-58d4-913b-7cde21bf3a40",
+  "revision_id": "ec469aea-bef2-5b57-b631-c30340092055",
+  "access_domain": "course:ap40",
+  "cases": [
+    {"id":"address_navigation","query":"Where do I assign an address in APplus?","purpose":"Find the relevant navigation and entry instructions.","expected_any":["AP40-02"]},
+    {"id":"supplier_dependency","query":"Why do I need a supplier before maintaining item supplier master data?","purpose":"Explain business relationships and prerequisites.","current_step_id":"AP40-02","expected_any":["AP40-07","AP40-10"]},
+    {"id":"bom_relationships","query":"Which objects are linked in a bill of materials?","purpose":"Explain business relationships.","expected_any":["AP40-11","AP40-12"]},
+    {"id":"working_time","query":"How are working days and shifts represented by day models and week models?","purpose":"Explain the process concepts.","expected_any":["AP40-14","AP40-15"]},
+    {"id":"goods_receipt_checks","query":"What must be checked before posting a goods receipt line?","purpose":"Find verification and entry conditions.","expected_any":["AP40-32","AP40-33"]},
+    {"id":"invoice_dependency","query":"Why must goods issue be posted before creating an invoice?","purpose":"Explain prerequisites and business dependencies.","current_step_id":"AP40-02","expected_any":["AP40-38","AP40-39"]},
+    {"id":"exact_identifier","query":"AP40-20","expected_any":["AP40-20"]},
+    {"id":"explicit_cross_step","query":"Compare AP40-07 and AP40-08","current_step_id":"AP40-02","expected_all":["AP40-07","AP40-08"]},
+    {"id":"unknown_identifier","query":"AP40-9999","expected_status":"no_evidence"},
+    {"id":"unrelated_question","query":"What is the orbital period of Neptune?","expected_status":"no_evidence"}
+  ]
+}

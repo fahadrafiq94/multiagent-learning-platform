@@ -1,0 +1,22 @@
+{
+  "version": "student-state-http-smoke-v1",
+  "kind": "synthetic development HTTP verification; not held-out acceptance",
+  "persona": "UrbanCycle purchasing coordinator; custom bicycles; supplier delays",
+  "turns": [
+    {
+      "id": "scenario",
+      "message": "UrbanCycle assembles custom bicycles. I am the purchasing coordinator. Late supplier deliveries cause component shortages and delayed customer orders. Our goal is to reduce shortages and improve delivery reliability.",
+      "expected": "Extract the explicitly supplied role, company, problem and goal; offer the draft for review. Do not auto-confirm it."
+    },
+    {
+      "id": "confirmation",
+      "message": "Yes, that summary is accurate. I confirm this scenario without any changes.",
+      "expected": "Persist the reviewed UrbanCycle purchasing-coordinator scenario only after this confirmation."
+    },
+    {
+      "id": "current_step",
+      "message": "I am now working on AP40-10.",
+      "expected": "Persist AP40-10 before retrieval/specialist context, record the current student message as provenance, and do not complete a step."
+    }
+  ]
+}

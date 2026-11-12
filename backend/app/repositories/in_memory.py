@@ -930,6 +930,10 @@ class InMemoryRepositories:
 
     conversations: InMemoryConversationRepository
 
+    # Durable admission/atomic SQL initialization are injected by the PG bundle.
+    turns: None = None
+    session_initializer: None = None
+
 
 def create_in_memory_repositories() -> InMemoryRepositories:
     """

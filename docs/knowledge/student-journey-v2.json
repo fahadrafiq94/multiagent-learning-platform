@@ -1,0 +1,19 @@
+{
+  "version": "student-journey-v2",
+  "kind": "synthetic development simulation; not held-out acceptance",
+  "persona": "UrbanCycle purchasing coordinator; custom bicycles; missing components delay customer orders",
+  "turns": [
+    {"id":"introduction", "message":"I am a production planner at UrbanCycle. We assemble custom bicycles.", "expected":"Ask for the missing business problem; do not invent it."},
+    {"id":"business_problem", "message":"Supplier deliveries arrive late, causing component shortages and delayed customer orders. Our goal is to reduce these shortages and improve delivery reliability.", "expected":"Summarize the supplied scenario for my review."},
+    {"id":"correction", "message":"Correction: my role is purchasing coordinator, not production planner. The company and business problem are unchanged.", "expected":"Apply my role correction and ask for confirmation."},
+    {"id":"confirmation", "message":"Yes, that corrected summary is accurate. I confirm this scenario: UrbanCycle assembles custom bicycles; I am the purchasing coordinator; late supplier deliveries cause component shortages and delayed customer orders; our goal is to reduce shortages and improve delivery reliability.", "expected":"Persist my confirmed scenario; do not advance ERP progress."},
+    {"id":"known_goal", "message":"What is our main business goal?", "expected":"Use my confirmed scenario without unnecessary document retrieval."},
+    {"id":"current_step", "message":"I am now working on AP40-10.", "expected":"Record my explicitly stated current step; do not assume it is completed."},
+    {"id":"misconception", "message":"I think the item-supplier master creates both the item and supplier records, so those records do not need to exist beforehand. Is that correct?", "expected":"Coach the business relationship using authorized sources; assess the actual claim."},
+    {"id":"hint", "message":"I still do not understand the relationship. Could you give me one hint?", "expected":"Adapt guidance from my actual signals; reuse evidence only when still relevant and authorized."},
+    {"id":"navigation", "message":"I am trying to assign an address at AP40-02. Where should I do that in APplus?", "expected":"Retrieve relevant AP40-02 source information; cite only supplied evidence; do not invent UI labels."},
+    {"id":"unsupported", "message":"What exact TCP port is the APplus database configured to use?", "expected":"Explain that this is not established by the course documents; do not invent a port."},
+    {"id":"thanks", "message":"Thanks, that makes sense.", "expected":"Acknowledge without unnecessary document search or grading this as a substantive answer."},
+    {"id":"recall", "message":"Which step did I explicitly say I was working on?", "expected":"Recall AP40-10 from my state/history; a navigation question must not automatically complete or advance progress."}
+  ]
+}

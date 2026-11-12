@@ -19,6 +19,7 @@ from app.services.model_service.schemas import (
     ModelChatRequest,
     ModelChatResponse,
 )
+from tests.agents.support_fixtures import support_reply
 
 
 def semantic_route(
@@ -102,8 +103,16 @@ def create_model_service(
                 {
                     "route": route,
                     "reason": ("The request matches this specialist."),
+                    "current_step": (
+                        {"action": "set", "step_id": "8", "source_quote": "I am at step 8 in AP+"}
+                        if request.messages[-1].content.startswith("I am at step 8 in AP+")
+                        else {"action": "unchanged", "step_id": None, "source_quote": None}
+                    ),
                 }
             )
+
+        elif task == "citation_support":
+            content = support_reply(request).content
 
         else:
             payload: dict[str, object] = {
@@ -553,6 +562,8 @@ async def test_specialist_turn_records_response_signal_in_graph() -> None:
         _,
     ) = create_model_service(
         specialist_assessment={
+            "assessability": "assessable",
+            "student_claim": "An invoice is a purchase order.",
             "understanding": ("incorrect"),
             "misconception_detected": (True),
             "reason": ("The student described the invoice as the purchase order."),
@@ -573,7 +584,7 @@ async def test_specialist_turn_records_response_signal_in_graph() -> None:
         OrchestrationRequest(
             session_id=str(session.session_id),
             student_id=(user.student_id),
-            user_message=("Why do we need a purchase order in procurement?"),
+            user_message=("An invoice is a purchase order."),
         )
     )
 

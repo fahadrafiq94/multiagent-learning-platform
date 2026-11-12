@@ -472,6 +472,9 @@ class SessionContextService:
                 changes.unresolved_questions
             )
 
+        if "pending_evidence_receipt" in supplied:
+            context.pending_evidence_receipt = changes.pending_evidence_receipt
+
     @staticmethod
     def _contains_question(
         *,

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from app.api.dependencies import authorize_invocation
 from app.api.routes import orchestration as orchestration_routes
+from app.identity import UserIdentity
 from app.main import app
 from app.orchestration.schemas import (
     OrchestrationRequest,
@@ -19,6 +21,7 @@ class FakeOrchestrationService:
     async def execute(
         self,
         request: OrchestrationRequest,
+        **kwargs,
     ) -> OrchestrationResponse:
         return OrchestrationResponse(
             session_id=request.session_id,
@@ -40,6 +43,7 @@ class FailingOrchestrationService:
     async def execute(
         self,
         request: OrchestrationRequest,
+        **kwargs,
     ) -> OrchestrationResponse:
         raise OrchestrationServiceError("The orchestration workflow failed unexpectedly.")
 
@@ -48,6 +52,7 @@ class UnknownStudentService:
     async def execute(
         self,
         request: OrchestrationRequest,
+        **kwargs,
     ) -> OrchestrationResponse:
         raise UnknownStudentError("No FREDi user identity exists for the supplied student_id.")
 
@@ -56,6 +61,7 @@ class InvalidSessionIdService:
     async def execute(
         self,
         request: OrchestrationRequest,
+        **kwargs,
     ) -> OrchestrationResponse:
         raise InvalidSessionIdError("session_id must be a valid FREDi session UUID.")
 
@@ -68,6 +74,8 @@ client = TestClient(app)
 
 
 def setup_function() -> None:
+    # These legacy route tests isolate orchestration; real auth is tested separately.
+    app.dependency_overrides[authorize_invocation] = lambda: UserIdentity(student_id="test")
     app.dependency_overrides[orchestration_routes.get_orchestration_service] = (
         override_orchestration_service
     )

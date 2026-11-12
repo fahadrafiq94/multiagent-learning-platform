@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from uuid import UUID
 
 from app.context import (
@@ -8,6 +9,7 @@ from app.context import (
     ConversationSession,
     SessionContext,
 )
+from app.context.schemas import MessageSourceReference
 from app.logging.logger import (
     logger,
 )
@@ -50,12 +52,15 @@ class ConversationService:
         session_repository: ConversationSessionRepository,
         session_context_repository: SessionContextRepository,
         conversation_repository: ConversationRepository,
+        session_initializer: Callable[[ConversationSession], Awaitable[ConversationSession]]
+        | None = None,
     ) -> None:
         self._session_repository = session_repository
 
         self._session_context_repository = session_context_repository
 
         self._conversation_repository = conversation_repository
+        self._session_initializer = session_initializer
 
     async def create_session(
         self,
@@ -78,6 +83,9 @@ class ConversationService:
             user_id=user_id,
             title=title,
         )
+
+        if self._session_initializer is not None:
+            return await self._session_initializer(session)
 
         created_session = await self._session_repository.create(session)
 
@@ -196,6 +204,7 @@ class ConversationService:
         agent_name: str | None = None,
         route: str | None = None,
         trace_id: UUID | None = None,
+        source_references: list[MessageSourceReference] | None = None,
     ) -> ConversationMessage:
         """
         Persist one assistant response.
@@ -212,6 +221,7 @@ class ConversationService:
             agent_name=agent_name,
             route=route,
             trace_id=trace_id,
+            source_references=source_references,
         )
 
     async def get_history(
@@ -298,6 +308,7 @@ class ConversationService:
         agent_name: str | None = None,
         route: str | None = None,
         trace_id: UUID | None = None,
+        source_references: list[MessageSourceReference] | None = None,
     ) -> ConversationMessage:
         """
         Shared message-persistence implementation.
@@ -319,6 +330,7 @@ class ConversationService:
             agent_name=agent_name,
             route=route,
             trace_id=trace_id,
+            source_references=source_references or [],
         )
 
         stored_message = await self._conversation_repository.append(message)

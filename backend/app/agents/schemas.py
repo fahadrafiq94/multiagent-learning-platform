@@ -16,6 +16,7 @@ from app.context.agent_views import (
 )
 from app.context.schemas import (
     MediumText,
+    MessageSourceReference,
 )
 from app.context.state_updates import (
     SessionStateUpdateProposal,
@@ -96,6 +97,43 @@ class UnderstandingLevel(StrEnum):
     NOT_APPLICABLE = "not_applicable"
 
 
+def _assessment_schema(schema: dict[str, Any]) -> None:
+    schema["required"] = ["assessability", "student_claim", "understanding"]
+    original = schema["properties"]
+    properties = {
+        "student_claim": original["student_claim"],
+        **{key: value for key, value in original.items() if key != "student_claim"},
+    }
+    schema["properties"] = properties
+    schema["anyOf"] = [
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["assessability", "student_claim", "understanding"],
+            "properties": {
+                **properties,
+                "assessability": {"const": "assessable"},
+                "student_claim": {"type": "string"},
+                "understanding": {
+                    "enum": ["correct", "partially_correct", "incorrect", "off_track"]
+                },
+            },
+        },
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["assessability", "student_claim", "understanding"],
+            "properties": {
+                **properties,
+                "assessability": {"enum": ["not_assessable", "uncertain"]},
+                "student_claim": {"type": "null"},
+                "understanding": {"const": "not_applicable"},
+                "misconception_detected": {"const": False},
+            },
+        },
+    ]
+
+
 class StudentResponseAssessment(BaseModel):
     """
     The specialist's judgment of the STUDENT's current message —
@@ -106,11 +144,30 @@ class StudentResponseAssessment(BaseModel):
     (Sprint 4B.9 guidance policy).
     """
 
+    model_config = ConfigDict(extra="forbid", json_schema_extra=_assessment_schema)
+
+    # Classify the student's contribution BEFORE choosing a grade. Missing legacy
+    # evidence remains readable but cannot authorize a learning-counter update.
+    assessability: Literal["assessable", "not_assessable", "uncertain"] = "uncertain"
+    student_claim: str | None = Field(default=None, min_length=1, max_length=512)
     understanding: UnderstandingLevel
 
     misconception_detected: bool = False
 
     reason: MediumText | None = None
+
+
+def _specialist_schema(schema: dict[str, Any]) -> None:
+    # Generation must explicitly decide assessability, not silently omit grading.
+    # Parsing still accepts historical omitted/null best-effort assessments.
+    properties = schema["properties"]
+    assessment = properties["response_assessment"]
+    reference = next(item for item in assessment["anyOf"] if "$ref" in item)
+    schema["properties"] = {
+        "response_assessment": reference,
+        **{key: value for key, value in properties.items() if key != "response_assessment"},
+    }
+    schema["required"] = [*schema.get("required", []), "response_assessment"]
 
 
 class SpecialistAgentOutput(BaseModel):
@@ -129,7 +186,7 @@ class SpecialistAgentOutput(BaseModel):
         fail the student's turn
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra=_specialist_schema)
 
     content: str = Field(min_length=1)
 
@@ -194,6 +251,7 @@ class AgentResponse(BaseModel):
     response_assessment: StudentResponseAssessment | None = None
 
     metadata: dict[str, Any] = Field(default_factory=dict)
+    source_references: list[MessageSourceReference] = Field(default_factory=list)
 
     @field_validator("content")
     @classmethod

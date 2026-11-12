@@ -22,6 +22,14 @@ backend/.venv/
 
 # Environment
 backend/.env
+backend/.env.*
+.claude/
+backend/reports/
+docs/RAG_Docs/
+.knowledge-intake.json
+.rag-runtime.json
+.knowledge-inbox/
+**/.knowledge-sources/
 
 # OS
 .DS_Store
@@ -29,3 +37,7 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Atomic application-credential temporaries must not enter build contexts.
+backend/.application-credentials-*
+backend/.application-bootstrap.lock

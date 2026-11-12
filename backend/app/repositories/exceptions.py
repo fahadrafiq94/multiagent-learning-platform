@@ -5,6 +5,22 @@ class RepositoryError(RuntimeError):
     """Base exception for repository operations."""
 
 
+class RepositoryUnavailableError(RepositoryError):
+    """Storage is unavailable; details never include credentials or SQL."""
+
+
+class RepositoryIntegrityError(RepositoryError):
+    """Invalid stored records or violated relational invariants."""
+
+
+class RepositoryPermissionError(RepositoryError):
+    """Database role lacks the required privilege."""
+
+
+class RepositoryConflictError(RepositoryError):
+    """A retry conflicts with an existing immutable operation."""
+
+
 class RepositoryNotFoundError(RepositoryError):
     """Raised when an expected persistent entity does not exist."""
 

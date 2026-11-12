@@ -43,6 +43,42 @@ def base_context() -> AgentContext:
     )
 
 
+def test_context_reply_event_contains_only_allowed_purpose_and_no_quote_or_reply():
+    state = {
+        "route": "fallback",
+        "metadata": {
+            "interaction_kind": "recall",
+            "context_reply_handled": True,
+            "source_quote": "PRIVATE STUDENT QUOTE",
+            "agent_response": "PRIVATE SAVED FACT",
+        },
+    }
+    event = build_request_event(state, duration_ms=10).log_payload()
+    assert event["interaction_kind"] == "recall"
+    assert event["context_reply_handled"] is True
+    assert "PRIVATE" not in str(event)
+    state["metadata"]["interaction_kind"] = "PRIVATE STUDENT QUOTE"
+    assert build_request_event(state, duration_ms=10).interaction_kind is None
+
+
+def test_progress_verification_event_has_bounded_status_and_separate_call_latency():
+    state = {
+        "metadata": {
+            "student_step_verification_status": "proposal",
+            "student_step_verification_calls": 1,
+            "student_step_verification_latency_ms": 12.5,
+            "student_step_verification_quote": "PRIVATE QUOTE",
+        }
+    }
+    event = build_request_event(state, duration_ms=20).log_payload()
+    assert event["student_step_verification_status"] == "proposal"
+    assert event["student_step_verification_calls"] == 1
+    assert event["student_step_verification_latency_ms"] == 12.5
+    assert "PRIVATE" not in str(event)
+    state["metadata"]["student_step_verification_status"] = "PRIVATE QUOTE"
+    assert build_request_event(state, duration_ms=20).student_step_verification_status is None
+
+
 def specialist_state() -> dict:
     return {
         "trace_id": (TRACE_ID),

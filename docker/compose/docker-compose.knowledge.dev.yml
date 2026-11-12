@@ -1,0 +1,8 @@
+# Local tools only. Do not include this overlay in production.
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${KNOWLEDGE_POSTGRES_PORT:-15432}:5432"
+  redis:
+    ports:
+      - "127.0.0.1:${KNOWLEDGE_REDIS_PORT:-16379}:6379"

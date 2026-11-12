@@ -39,6 +39,11 @@ class ModelChatRequest(BaseModel):
     max_tokens: int | None = Field(default=None, gt=0)
     metadata: dict[str, Any] = Field(default_factory=dict)
     response_schema: dict[str, Any] | None = None
+    # None preserves existing provider behavior. Internal structured planners can
+    # explicitly request no reasoning output without changing normal chat calls.
+    reasoning_enabled: bool | None = None
+    # Request-local window; None preserves the provider's configured default.
+    context_window_tokens: int | None = Field(default=None, ge=256, le=262144)
 
     @field_validator("messages")
     @classmethod
@@ -75,6 +80,8 @@ class ModelEmbeddingRequest(BaseModel):
     texts: list[str] = Field(min_length=1)
     model: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    # None preserves provider defaults for existing callers; ingestion uses False.
+    truncate: bool | None = None
 
     @field_validator("texts")
     @classmethod
@@ -93,6 +100,16 @@ class ModelEmbeddingResponse(BaseModel):
     provider: ModelProviderName
     latency_ms: float
     raw: dict[str, Any] | None = None
+
+
+class EmbeddingModelInfo(BaseModel):
+    """Provider-neutral identity/dimension preflight for durable indexes."""
+
+    provider: ModelProviderName
+    model: str
+    revision: str
+    dimension: int = Field(ge=1)
+    context_length: int = Field(ge=1)
 
 
 class ModelHealthResponse(BaseModel):

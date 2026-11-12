@@ -211,7 +211,13 @@ async def test_orchestrator_receives_minimal_context() -> None:
     assert view.learning_profile is None
     assert view.progress is None
 
-    assert view.recent_messages == []
+    assert len(view.recent_messages) == 2
+    assert all(
+        len(message.content) <= 450 and not message.source_references
+        for message in view.recent_messages
+    )
+    assert view.routing_facts is not None
+    assert view.routing_facts.learner_role == "Production Planner"
 
     assert view.session_summary is None
 

@@ -2,12 +2,10 @@ from __future__ import annotations
 
 from pydantic import ValidationError
 
-from app.agents.context_prompt import (
-    context_view_to_prompt_text,
-)
 from app.agents.exceptions import (
     AgentExecutionError,
 )
+from app.agents.grounding import build_specialist_request
 from app.agents.policies import (
     PROCESS_COACH_GUIDANCE,
     RESPONSE_ASSESSMENT_INSTRUCTIONS,
@@ -16,7 +14,6 @@ from app.agents.schemas import (
     AgentName,
     AgentRequest,
     AgentResponse,
-    SpecialistAgentOutput,
 )
 from app.agents.state_update_prompt import (
     state_update_proposal_instructions,
@@ -29,10 +26,6 @@ from app.services.model_service import (
 )
 from app.services.model_service.exceptions import (
     ModelServiceError,
-)
-from app.services.model_service.schemas import (
-    ModelChatRequest,
-    ModelMessage,
 )
 
 PROCESS_COACH_SYSTEM_PROMPT = """
@@ -123,32 +116,20 @@ class ProcessCoachAgent:
             f"{RESPONSE_ASSESSMENT_INSTRUCTIONS}"
         )
 
-        context_text = context_view_to_prompt_text(request.context)
-
-        if context_text:
-            system_prompt = f"{system_prompt}\n\nFILTERED RUNTIME CONTEXT:\n{context_text}"
-
-        model_request = ModelChatRequest(
-            messages=[
-                ModelMessage(
-                    role="system",
-                    content=system_prompt,
-                ),
-                ModelMessage(
-                    role="user",
-                    content=(request.user_message),
-                ),
-            ],
+        prepared = build_specialist_request(
+            request,
+            system_prompt,
             model=self._model,
-            response_schema=(SpecialistAgentOutput.model_json_schema()),
-            metadata={
-                "task": ("process_coach_response"),
-                "output_contract": ("specialist-agent-v2"),
-            },
+            task="process_coach_response",
+            agent=self.name,
         )
 
+        if fallback := prepared.no_evidence_response():
+            return fallback
+
         try:
-            response = await self._model_service.generate(model_request)
+            response = await self._model_service.generate(prepared.model_request)
+            prepared.check_usage(response.usage)
         except ModelServiceError as exc:
             raise AgentExecutionError(
                 ("Process Coach Agent could not generate a response."),
@@ -167,7 +148,7 @@ class ProcessCoachAgent:
             )
 
         try:
-            output = SpecialistAgentOutput.model_validate_json(content)
+            output = prepared.parse(content)
         except ValidationError as exc:
             raise AgentExecutionError(
                 ("Process Coach Agent returned invalid structured output."),
@@ -177,12 +158,15 @@ class ProcessCoachAgent:
                 },
             ) from exc
 
+        output = await prepared.verify(output, self._model_service)
         return AgentResponse(
             agent=self.name,
             content=output.content,
             state_update_proposal=(output.state_update_proposal),
             response_assessment=(output.response_assessment),
+            source_references=prepared.references(output),
             metadata={
+                **prepared.metadata(output),
                 "model": response.model,
                 "model_provider": (response.provider),
                 "model_latency_ms": (response.latency_ms),

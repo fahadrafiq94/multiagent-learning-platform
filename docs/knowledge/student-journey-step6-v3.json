@@ -1,0 +1,91 @@
+{
+  "version": "student-journey-step6-v3",
+  "kind": "synthetic acceptance journey; fixed before candidate execution; not held-out",
+  "persona": "Bridgemark Foods receiving supervisor; food distribution; delivery-note discrepancies hold dispatch",
+  "confirmation": {
+    "learner_role": "receiving supervisor",
+    "company_context": "bridgemark"
+  },
+  "turns": [
+    {
+      "id": "introduction",
+      "message": "I work at Bridgemark Foods as a goods-receipt clerk. We receive and dispatch food products for supermarkets.",
+      "expected": "Onboarding begins; capture role and company; do not invent the business problem."
+    },
+    {
+      "id": "business_problem",
+      "message": "Delivery notes often arrive with quantities that do not match what was actually received, and that causes dispatch holds and disputes with suppliers. Our goal is to make receiving accurate so that dispatch is never held by note errors.",
+      "expected": "Capture the business problem as stated; no grading, no state change beyond the onboarding draft."
+    },
+    {
+      "id": "correction",
+      "message": "Correction: my role is receiving supervisor, not goods-receipt clerk. The company and the problem are right.",
+      "expected": "The corrected role replaces the earlier one in the onboarding draft; company and problem are retained."
+    },
+    {
+      "id": "confirmation",
+      "message": "Yes, that summary is accurate. I confirm this scenario: I am the receiving supervisor at Bridgemark Foods; delivery-note discrepancies hold our dispatches; our goal is to make receiving accurate so dispatch is never held by note errors.",
+      "expected": "Scenario onboarding completes on explicit confirmation; the confirmed card is persisted."
+    },
+    {
+      "id": "current_step",
+      "message": "I am now working on AP40-32.",
+      "expected": "The explicit current-step declaration is saved as current_step_id AP40-32; it does not mark the step completed."
+    },
+    {
+      "id": "prerequisite",
+      "message": "Which prerequisite does AP40-32 list before creating the goods receipt?",
+      "expected": "Process Coach; source search; one reasoning question at minimal, without disclosing the answer."
+    },
+    {
+      "id": "blocked_first",
+      "message": "I am stuck on AP40-32. I cannot work out which prerequisite must be satisfied before I can create the goods receipt. Please give me a hint.",
+      "expected": "Recognize an explicit current blocker; apply only a valid authorized proposal; any guidance change affects the next turn."
+    },
+    {
+      "id": "blocked_second",
+      "message": "I tried reasoning about AP40-32, but I still cannot identify what needs to exist first. I am still blocked. Can you give me more help?",
+      "expected": "Natural persisted blocker adaptation without a manual level override; keep the response at the level selected for this turn."
+    },
+    {
+      "id": "blocked_third",
+      "message": "I am still blocked on the prerequisite for AP40-32 after trying again. I need a more direct explanation to continue.",
+      "expected": "Natural escalation if the blocker is accepted, without inventing completion or changing current step."
+    },
+    {
+      "id": "ui_question",
+      "message": "Where in AP+ do I create the goods receipt header from the purchase order for AP40-32?",
+      "expected": "AP+ Navigator; use only supported UI details; at higher guidance, provide useful cited help if the sources establish it."
+    },
+    {
+      "id": "partial_reasoning",
+      "message": "My reasoning is that posting the goods receipt line at AP40-33 needs an existing goods receipt header, but it creates the warehouse and bin automatically. Is that correct?",
+      "expected": "Process Coach assesses the mixed claim, including its incorrect warehouse/bin premise; a partial or incorrect grade is defensible. Do not save AP40-33 as current progress."
+    },
+    {
+      "id": "correct_reasoning_one",
+      "message": "I think AP40-32 refers to a purchase order that already exists and has been released and sent; creating the goods receipt does not create that purchase order. Is that reasoning correct?",
+      "expected": "Assess the endorsed process claim against admitted evidence; genuine correct understanding may contribute to gradual recovery."
+    },
+    {
+      "id": "correct_reasoning_two",
+      "message": "For AP40-33, I think the goods receipt document, warehouse and bin must already exist before I can post stock into them. Is my reasoning correct?",
+      "expected": "Assess the claim; repeated productive understanding may lower guidance by one level under the existing policy, while an active blocker still sets a floor."
+    },
+    {
+      "id": "recall_history",
+      "message": "Which step did I explicitly say I am working on?",
+      "expected": "Recalled from saved state/history without any document search; no progress change from the question."
+    },
+    {
+      "id": "thanks",
+      "message": "That makes sense now, thank you.",
+      "expected": "Brief acknowledgement; no retrieval, no specialist generation, no assessment signal."
+    },
+    {
+      "id": "unsupported",
+      "message": "What is the encryption key for the APplus archive database?",
+      "expected": "No evidence supports this; clean abstention with no citations, no learning assessment and no state proposal."
+    }
+  ]
+}

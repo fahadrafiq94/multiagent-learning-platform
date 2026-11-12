@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
+from app.agents.assessment_guard import guarded_assessment
 from app.agents.exceptions import (
     AgentError,
 )
@@ -18,6 +19,7 @@ from app.agents.registry import (
 )
 from app.agents.routing import (
     OrchestratorRequest,
+    RoutingDecision,
 )
 from app.agents.schemas import (
     AgentName,
@@ -26,6 +28,7 @@ from app.agents.schemas import (
 from app.context.agent_views import (
     ContextTarget,
 )
+from app.context.grounding import GroundingContext
 from app.context.policies import (
     AgentContextPolicyService,
 )
@@ -42,7 +45,10 @@ from app.domain.guidance import (
 )
 from app.domain.guidance_policy import (
     assessment_signal,
+    grounded_abstention_signal,
+    select_guidance,
 )
+from app.knowledge.integration import GroundingAdmission, SpecialistGroundingService
 from app.orchestration.router import (
     classify_route,
 )
@@ -55,6 +61,7 @@ from app.repositories.exceptions import (
 from app.services.context_service import (
     ContextService,
 )
+from app.services.conversation_reply import conversation_reply
 from app.services.conversation_service import (
     ConversationService,
 )
@@ -93,6 +100,23 @@ def prepare_input_node(
             {},
         )
     )
+    metadata = {
+        key: value
+        for key, value in metadata.items()
+        if not key.startswith(
+            (
+                "student_step_",
+                "scenario_role_",
+                "interaction_",
+                "context_reply_",
+                "assessment_",
+                "guidance_",
+                "teaching_",
+            )
+        )
+        and key != "scenario_source_recorded"
+        and key != "active_blocker_after"
+    }
 
     if not user_message:
         return {
@@ -148,19 +172,24 @@ async def load_context_node(
         }
 
     try:
-        current_message = await conversation_service.append_user_message(
-            user_id=user_id,
-            session_id=session_id,
-            content=(state["user_message"]),
-            trace_id=(state.get("trace_id")),
-        )
+        current_message_id = state.get("current_message_id")
+        if not state.get("turn_managed"):
+            current_message = await conversation_service.append_user_message(
+                user_id=user_id,
+                session_id=session_id,
+                content=(state["user_message"]),
+                trace_id=(state.get("trace_id")),
+            )
+            current_message_id = current_message.message_id
+        if current_message_id is None:
+            raise ValueError("Admitted turn message is missing.")
 
         context = await context_service.build(
             user_id=user_id,
             session_id=session_id,
             current_message=(state["user_message"]),
             trace_id=state.get("trace_id"),
-            current_message_id=(current_message.message_id),
+            current_message_id=current_message_id,
         )
 
         onboarding_required = await onboarding_service.needs_onboarding(user_id=user_id)
@@ -180,7 +209,7 @@ async def load_context_node(
 
     return {
         **state,
-        "current_message_id": (current_message.message_id),
+        "current_message_id": current_message_id,
         "base_context": context,
         "onboarding_required": (onboarding_required),
         "metadata": {
@@ -252,6 +281,14 @@ async def scenario_onboarding_node(
         }
 
     response_text = _render_onboarding_result(result)
+    saved_draft = result.draft
+    saved_role = (
+        saved_draft.learner_role
+        if saved_draft
+        else result.scenario_card.learner_role
+        if result.scenario_card
+        else None
+    )
 
     return {
         **state,
@@ -264,10 +301,72 @@ async def scenario_onboarding_node(
             "scenario_onboarding": True,
             "onboarding_outcome": (result.outcome.value),
             "scenario_status": (result.status.value),
+            "scenario_role_status": "persisted" if saved_role else "missing",
+            "scenario_source_recorded": bool(
+                saved_draft and state.get("current_message_id") in saved_draft.source_message_ids
+            ),
             "context_target": (scenario_context.target.value),
             "context_policy_version": (scenario_context.policy_version),
         },
     }
+
+
+async def _apply_student_step_before_specialist(
+    state: OrchestrationState,
+    decision: RoutingDecision,
+    *,
+    service: SessionStateUpdateService | None,
+    context_service: ContextService | None,
+) -> OrchestrationState:
+    metadata = dict(state.get("metadata", {}))
+    metadata["student_step_guard"] = True
+    step = decision.current_step
+    if step is None:
+        metadata["student_step_status"] = (
+            "rejected" if "current_step" in decision.model_fields_set else "omitted"
+        )
+        return {**state, "metadata": metadata}
+    metadata["student_step_proposed"] = step.action == "set"
+    base = state.get("base_context")
+    if service is None or context_service is None or base is None or base.session_context is None:
+        metadata["student_step_status"] = "unavailable"
+        return {**state, "metadata": metadata}
+    try:
+        status, _ = await service.apply_student_step(
+            user_id=base.user_id,
+            session_id=base.session_id,
+            message_id=state.get("current_message_id"),
+            current_message=state["user_message"],
+            decision=step,
+            expected_version=base.session_context.version,
+        )
+        metadata["student_step_status"] = status
+        metadata["student_step_applied"] = status == "persisted"
+        if status == "persisted":
+            metadata["student_step_source_message_id"] = str(state["current_message_id"])
+            # Rebuild through the ordinary budget/context service. Grounding and
+            # specialist views must see the committed step and a fresh version.
+            base = await context_service.build(
+                user_id=base.user_id,
+                session_id=base.session_id,
+                current_message=state["user_message"],
+                trace_id=state.get("trace_id"),
+                current_message_id=state.get("current_message_id"),
+            )
+            metadata["student_step_context_refreshed"] = True
+        if status in {"rejected", "clarification_required"}:
+            metadata["student_step_clarification"] = True
+    except (RepositoryError, ValueError):
+        metadata["student_step_status"] = (
+            "persisted" if metadata.get("student_step_applied") else "failed"
+        )
+        return {
+            **state,
+            "error": "Student state could not be saved; please retry.",
+            "route": "fallback",
+            "metadata": metadata,
+        }
+    return {**state, "base_context": base, "metadata": metadata}
 
 
 async def route_request_node(
@@ -275,6 +374,8 @@ async def route_request_node(
     *,
     orchestrator: OrchestratorAgent,
     context_policy_service: (AgentContextPolicyService),
+    session_state_update_service: SessionStateUpdateService | None = None,
+    context_service: ContextService | None = None,
 ) -> OrchestrationState:
     if state.get("error"):
         return state
@@ -287,6 +388,8 @@ async def route_request_node(
     )
 
     metadata["scenario_onboarding"] = False
+    metadata["student_step_guard"] = session_state_update_service is not None
+    metadata["student_step_status"] = "unavailable"
 
     base_context = state.get("base_context")
 
@@ -313,6 +416,34 @@ async def route_request_node(
         result = await orchestrator.route(request)
 
         decision = result.decision
+        metadata.update(
+            {
+                key: result.metadata[key]
+                for key in (
+                    "student_step_verification_status",
+                    "student_step_verification_calls",
+                    "student_step_verification_latency_ms",
+                )
+                if key in result.metadata
+            }
+        )
+
+        if session_state_update_service is not None:
+            state = await _apply_student_step_before_specialist(
+                {**state, "metadata": metadata},
+                decision,
+                service=session_state_update_service,
+                context_service=context_service,
+            )
+            metadata = dict(state.get("metadata", {}))
+            if state.get("error"):
+                return state
+            if metadata.get("student_step_clarification"):
+                return {
+                    **state,
+                    "route": "fallback",
+                    "route_reason": "The current-step statement needs clarification.",
+                }
 
         metadata.update(
             {
@@ -321,6 +452,47 @@ async def route_request_node(
                 "context_target": (orchestrator_context.target.value),
             }
         )
+
+        purpose = decision.interaction
+        metadata["interaction_kind"] = purpose.kind if purpose else None
+        metadata["interaction_status"] = (
+            "normal_workflow"
+            if purpose
+            else "rejected"
+            if "interaction" in decision.model_fields_set
+            else "omitted"
+        )
+        # Explicit step changes/ambiguity take precedence over a contradictory
+        # social/recall classification. Mixed substantive requests never shortcut.
+        if purpose and not (decision.current_step and decision.current_step.action != "unchanged"):
+            reply = conversation_reply(purpose, state.get("base_context") or base_context)
+            if reply is not None:
+                return {
+                    **state,
+                    "route": "fallback",
+                    "route_reason": "Pure conversation/context reply.",
+                    "agent_response": reply,
+                    "source_references": [],
+                    "metadata": {
+                        **metadata,
+                        "context_reply_handled": True,
+                        "interaction_status": "direct_reply",
+                        "routing_completed": True,
+                        "routing_strategy": "llm_semantic_router_v2",
+                        "keyword_fallback_used": False,
+                        "agent_called": False,
+                        "response_assessed": False,
+                        "response_signal_recorded": False,
+                        "retrieval_searched": False,
+                        "rag": {
+                            "status": "skipped",
+                            "reason": "owned_context_reply",
+                            "planner_calls": 0,
+                            "embedding_calls": 0,
+                            "actions": [],
+                        },
+                    },
+                }
 
         if decision.route != "fallback":
             return {
@@ -377,6 +549,7 @@ async def execute_agent_node(
     agent_registry: AgentRegistry,
     agent_name: AgentName,
     context_policy_service: (AgentContextPolicyService),
+    grounding_service: SpecialistGroundingService | None = None,
 ) -> OrchestrationState:
     if state.get("error"):
         return state
@@ -410,6 +583,38 @@ async def execute_agent_node(
         )
     )
 
+    admission: GroundingAdmission | None = None
+    if grounding_service is not None:
+        try:
+            admission = await grounding_service.prepare(
+                base_context,
+                agent_name,
+                current_message_id=state.get("current_message_id"),
+            )
+        except Exception:
+            admission = GroundingAdmission(
+                GroundingContext(status="error"),
+                {"status": "error", "reason": "grounding_preparation_failed"},
+            )
+        metadata["rag"] = admission.trace
+        if admission.clarification:
+            return {
+                **state,
+                "selected_agent": agent_name,
+                "agent_response": admission.clarification,
+                "state_update_proposal": None,
+                "response_assessment": None,
+                "source_references": [],
+                "metadata": {
+                    **metadata,
+                    "selected_agent": agent_name,
+                    "agent_called": False,
+                    "response_assessed": False,
+                },
+            }
+        view = view.model_copy(deep=True)
+        view.grounding = admission.context
+
     request = AgentRequest(
         session_id=state["session_id"],
         student_id=(state.get("student_id")),
@@ -421,19 +626,33 @@ async def execute_agent_node(
         metadata=metadata,
     )
 
+    called = False
     try:
+        if admission is not None and grounding_service is not None:
+            await grounding_service.authorize(admission)
         agent = agent_registry.get(agent_name)
 
+        called = True
         response = await agent.execute(request)
+        if admission is not None and grounding_service is not None:
+            await grounding_service.authorize(admission)
 
     except AgentError as exc:
         return {
             **state,
-            "error": exc.message,
+            "error": (
+                "Grounded specialist response could not be generated."
+                if admission is not None
+                else exc.message
+            ),
             "metadata": {
                 **metadata,
                 "selected_agent": (agent_name),
-                "agent_error": (exc.to_dict()),
+                "agent_error": (
+                    {"error": "grounded_specialist_failed"}
+                    if admission is not None
+                    else exc.to_dict()
+                ),
             },
         }
 
@@ -442,6 +661,24 @@ async def execute_agent_node(
         # into a clean error state, not an unhandled graph exception
         # after the user message was already persisted.
         # RepositoryError is a RuntimeError subclass.
+        if admission is not None:
+            return {
+                **state,
+                "selected_agent": agent_name,
+                "agent_response": (
+                    "I couldn't verify the course context for this request. Please try again."
+                ),
+                "source_references": [],
+                "state_update_proposal": None,
+                "response_assessment": None,
+                "metadata": {
+                    **metadata,
+                    "selected_agent": agent_name,
+                    "agent_called": called,
+                    "response_assessed": False,
+                    "rag": {"status": "unavailable", "reason": "grounding_unavailable"},
+                },
+            }
         return {
             **state,
             "error": str(exc),
@@ -450,24 +687,93 @@ async def execute_agent_node(
                 "selected_agent": (agent_name),
             },
         }
+    except Exception:
+        if admission is None:
+            raise
+        return {
+            **state,
+            "error": "Grounded specialist response could not be generated.",
+            "source_references": [],
+            "metadata": {
+                **metadata,
+                "selected_agent": agent_name,
+                "agent_error": {"error": "grounded_specialist_failed"},
+            },
+        }
 
+    neutral = admission is not None and (
+        admission.context.status in {"error", "unavailable", "no_evidence"}
+        or response.metadata.get("grounding", {}).get("status")
+        in {"error", "unavailable", "no_evidence"}
+        or response.metadata.get("grounding", {}).get("support_abstained") is True
+        or response.metadata.get("grounding", {}).get("teaching_abstained") is True
+    )
+    proposal = None if neutral else response.state_update_proposal
+    assessment, assessment_status = guarded_assessment(
+        None if neutral else response.response_assessment, state["user_message"]
+    )
+    if admission is not None:
+        metadata["rag"] = {
+            **admission.trace,
+            **response.metadata.get("grounding", {}),
+            "learning_signal_suppressed": neutral,
+        }
+        if (
+            grounding_service is not None
+            and admission.context.status == "found"
+            and (
+                metadata["rag"].get("support_abstained") is True
+                or metadata["rag"].get("teaching_abstained") is True
+            )
+        ):
+            # Evidence was retrieved but the answer was not verified, so no
+            # citations were archived. Bridge the same references to the
+            # student's next turn (app-owned, single-turn, best-effort).
+            await grounding_service.record_unverified_receipt(
+                user_id=base_context.user_id,
+                session_id=base_context.session_id,
+                admission=admission,
+            )
+        final_budget = response.metadata.get("grounding", {})
+        for key in (
+            "estimated_input_tokens",
+            "input_token_budget",
+            "estimated_essential_tokens",
+            "estimated_history_tokens",
+        ):
+            if key in final_budget:
+                metadata[key] = final_budget[key]
+        if "dropped_message_count" in final_budget:
+            metadata["dropped_message_count"] = (
+                base_context.metadata.dropped_message_count + final_budget["dropped_message_count"]
+            )
+            metadata["recent_message_count"] = final_budget["retained_message_count"]
+            metadata["truncation_applied"] = (
+                base_context.metadata.truncation_applied
+                or final_budget["dropped_message_count"] > 0
+                or final_budget["budget_omissions"] > 0
+            )
     return {
         **state,
         "selected_agent": (response.agent),
         "agent_response": (response.content),
-        "state_update_proposal": (response.state_update_proposal),
-        "response_assessment": (response.response_assessment),
+        "state_update_proposal": proposal,
+        "response_assessment": assessment,
+        "source_references": response.source_references if admission is not None else [],
         "metadata": {
             **metadata,
             "selected_agent": (response.agent),
             "agent_called": True,
-            "response_assessed": (response.response_assessment is not None),
+            "response_assessed": assessment is not None,
+            "assessment_status": "suppressed"
+            if neutral
+            else response.metadata.get("assessment_status", assessment_status),
+            "guidance_level_used": request.guidance_level.value,
+            "guidance_level_next": request.guidance_level.value,
             "agent_metadata": (dict(response.metadata)),
             "context_target": (view.target.value),
             "context_policy_version": (view.policy_version),
-            "state_update_proposed": (
-                bool(response.state_update_proposal and response.state_update_proposal.operations)
-            ),
+            "state_update_proposed": (bool(proposal and proposal.operations)),
         },
     }
 
@@ -488,7 +794,11 @@ def fallback_response_node(
     return {
         **state,
         "agent_response": (
-            "I'm not sure which type of "
+            state.get("agent_response", "")
+            if metadata.get("context_reply_handled")
+            else "Which step are you currently working on? Please state its identifier."
+            if metadata.get("student_step_clarification")
+            else "I'm not sure which type of "
             "help you need yet. Are you "
             "asking about your business "
             "scenario, business-process "
@@ -523,7 +833,8 @@ async def finalize_response_node(
         final_response = "I could not produce a response for this request."
 
     if (
-        state.get("current_message_id") is not None
+        not state.get("turn_managed")
+        and state.get("current_message_id") is not None
         and state.get("user_id") is not None
         and state.get("session_uuid") is not None
     ):
@@ -535,6 +846,9 @@ async def finalize_response_node(
                 agent_name=(state.get("selected_agent")),
                 route=(state.get("route")),
                 trace_id=(state.get("trace_id")),
+                source_references=state.get("source_references", [])
+                if not state.get("error")
+                else [],
             )
 
             metadata["assistant_message_persisted"] = True
@@ -596,6 +910,7 @@ async def apply_state_updates_node(
             session_id=session_id,
             agent_name=agent_name,
             proposal=(state.get("state_update_proposal")),
+            allow_specialist_step_updates=not metadata.get("student_step_guard", False),
         )
 
     except Exception as exc:
@@ -603,7 +918,7 @@ async def apply_state_updates_node(
             **state,
             "metadata": {
                 **metadata,
-                "state_update_applied": (False),
+                "state_update_applied": bool(metadata.get("student_step_applied", False)),
                 "state_update_error": (str(exc)),
             },
         }
@@ -618,6 +933,7 @@ async def apply_state_updates_node(
         blocked = any(
             operation.action == SessionStateAction.SET for operation in (blocker_operations)
         )
+        metadata["active_blocker_after"] = blocked
 
         try:
             metadata["guidance_level_updated"] = await _update_hint_state_after_blocker(
@@ -635,8 +951,10 @@ async def apply_state_updates_node(
         **state,
         "metadata": {
             **metadata,
-            "state_update_applied": (result.applied),
-            "state_update_accepted_count": (len(result.accepted_operations)),
+            "state_update_applied": result.applied or metadata.get("student_step_applied", False),
+            "state_update_accepted_count": (
+                len(result.accepted_operations) + int(metadata.get("student_step_applied", False))
+            ),
             "state_update_rejected_count": (len(result.rejected_operations)),
             "session_context_version": (result.session_context_version),
             "state_update_rejections": [
@@ -683,33 +1001,52 @@ async def record_response_signal_node(
         )
     )
 
-    assessment = state.get("response_assessment")
+    # Defense in depth for custom agents as well as normal specialist entry points.
+    assessment, guard_status = guarded_assessment(
+        state.get("response_assessment"), state.get("user_message", "")
+    )
+    metadata["assessment_status"] = metadata.get("assessment_status", guard_status)
+    metadata["guidance_level_next"] = metadata.get(
+        "guidance_level_updated", metadata.get("guidance_level_used")
+    )
 
-    if assessment is None:
-        return {
-            **state,
-            "metadata": {
-                **metadata,
-                "response_signal_recorded": (False),
-                "response_reason": ("no_assessment"),
-            },
+    if assessment is not None:
+        update = assessment_signal(assessment)
+        assessment_metadata = {
+            **metadata,
+            "response_understanding": (assessment.understanding.value),
+            "response_misconception_detected": (assessment.misconception_detected),
+        }
+    else:
+        # Suppressed LLM assessment: only the application-owned grounding outcome
+        # may still move the counters (found evidence, unverified answer).
+        rag = metadata.get("rag") or {}
+        update = grounded_abstention_signal(
+            rag_status=rag.get("status"),
+            support_abstained=rag.get("support_abstained"),
+            teaching_abstained=rag.get("teaching_abstained"),
+        )
+        assessment_metadata = {
+            **metadata,
+            "response_reason": (
+                "unverified_grounded_abstention"
+                if update.struggle_delta or update.reset_productive
+                else "no_assessment"
+            ),
         }
 
-    update = assessment_signal(assessment)
-
-    assessment_metadata = {
-        **metadata,
-        "response_understanding": (assessment.understanding.value),
-        "response_misconception_detected": (assessment.misconception_detected),
-    }
-
-    if update.success_delta == 0 and update.struggle_delta == 0 and not update.reset_struggle:
+    if not (
+        update.success_delta
+        or update.struggle_delta
+        or update.reset_struggle
+        or update.reset_productive
+    ):
         return {
             **state,
             "metadata": {
                 **assessment_metadata,
                 "response_signal_recorded": (False),
-                "response_reason": ("no_signal"),
+                "response_reason": ("no_assessment" if assessment is None else "no_signal"),
             },
         }
 
@@ -721,12 +1058,38 @@ async def record_response_signal_node(
         hint_state = user_context.hint_state
 
         hint_state.successful_independent_steps += update.success_delta
+        if update.reset_productive:
+            hint_state.consecutive_productive_attempts = 0
+        elif update.success_delta:
+            hint_state.consecutive_productive_attempts += 1
 
         if update.reset_struggle:
             hint_state.consecutive_unproductive_attempts = 0
 
         else:
             hint_state.consecutive_unproductive_attempts += update.struggle_delta
+
+        base_context = state.get("base_context")
+        if base_context is not None and base_context.session_context is not None:
+            session_context = base_context.session_context.model_copy(deep=True)
+            # Only accepted blocker operations set this server-owned projection.
+            if "active_blocker_after" in metadata:
+                session_context.active_blocker = (
+                    "Active blocker" if metadata["active_blocker_after"] else None
+                )
+            if session_context.active_blocker is not None or hint_state.manually_overridden:
+                hint_state.consecutive_productive_attempts = 0
+            if not hint_state.manually_overridden:
+                used = base_context.guidance_level
+                if used is not None and list(GuidanceLevel).index(used) > list(GuidanceLevel).index(
+                    hint_state.guidance_level
+                ):
+                    hint_state.guidance_level = used
+            decision = select_guidance(hint_state=hint_state, session_context=session_context)
+            hint_state.guidance_level = decision.level
+            hint_state.last_change_reason = decision.reason
+            if decision.reason == "productive_reasoning":
+                hint_state.consecutive_productive_attempts = 0
 
         hint_state.updated_at = datetime.now(UTC)
 
@@ -735,6 +1098,7 @@ async def record_response_signal_node(
             context=user_context,
             expected_version=(user_context.version),
         )
+        assessment_metadata["guidance_level_next"] = hint_state.guidance_level.value
 
     except Exception as exc:
         return {
@@ -773,6 +1137,17 @@ async def update_session_summary_node(
 
     if state.get("error"):
         return state
+
+    if state.get("metadata", {}).get("context_reply_handled"):
+        return {
+            **state,
+            "metadata": {
+                **state.get("metadata", {}),
+                "summary_update_attempted": False,
+                "summary_update_applied": False,
+                "summary_update_reason": "deferred_context_reply",
+            },
+        }
 
     user_id = state.get("user_id")
 
@@ -858,6 +1233,8 @@ async def _update_hint_state_after_blocker(
         hint_state.consecutive_blocked_attempts = 0
 
         hint_state.last_change_reason = "Active blocker cleared in session runtime state."
+
+    hint_state.consecutive_productive_attempts = 0
 
     hint_state.updated_at = datetime.now(UTC)
 

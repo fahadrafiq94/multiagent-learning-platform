@@ -94,6 +94,11 @@ def create_recording_model_service(
                 {
                     "route": route,
                     "reason": ("The current request belongs to this specialist."),
+                    "current_step": (
+                        {"action": "set", "step_id": "8", "source_quote": "I am at step 8 in AP+"}
+                        if request.messages[-1].content.startswith("I am at step 8 in AP+")
+                        else {"action": "unchanged", "step_id": None, "source_quote": None}
+                    ),
                 }
             )
 

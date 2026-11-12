@@ -16,6 +16,7 @@ from app.services.model_service.exceptions import (
     ModelTimeoutError,
 )
 from app.services.model_service.schemas import (
+    EmbeddingModelInfo,
     ModelChatRequest,
     ModelChatResponse,
     ModelEmbeddingRequest,
@@ -35,6 +36,28 @@ class OllamaModelProvider:
     """
 
     provider_name: Literal["ollama"] = "ollama"
+
+    async def inspect_embedding_model(self, model: str) -> EmbeddingModelInfo:
+        try:
+            tags = await self._get_json_once("/api/tags")
+            name = model if ":" in model.rsplit("/", 1)[-1] else model + ":latest"
+            installed = next(item for item in tags["models"] if item["name"] == name)
+            details = await self._post_json_with_retries("/api/show", {"model": model})
+            info = details["model_info"]
+            architecture = info["general.architecture"]
+            if "embedding" not in details.get("capabilities", []):
+                raise ValueError("Model does not advertise embedding support.")
+            return EmbeddingModelInfo(
+                provider="ollama",
+                model=model,
+                revision=installed["digest"],
+                dimension=info[architecture + ".embedding_length"],
+                context_length=info[architecture + ".context_length"],
+            )
+        except Exception:
+            raise ModelEmbeddingError(
+                "ollama", details={"error": "Embedding inspection failed."}
+            ) from None
 
     def __init__(
         self,
@@ -278,6 +301,8 @@ class OllamaModelProvider:
             "model": model,
             "input": request.texts,
         }
+        if request.truncate is not None:
+            payload["truncate"] = request.truncate
 
         start = time.perf_counter()
 
@@ -299,6 +324,17 @@ class OllamaModelProvider:
 
         except ModelProviderUnavailableError:
             raise
+
+        except httpx.HTTPStatusError as exc:
+            # Stable signal for adaptive splitting; never propagate response/source text.
+            message = exc.response.text.lower()
+            too_long = exc.response.status_code == 400 and (
+                "context length" in message or "input length" in message
+            )
+            raise ModelEmbeddingError(
+                self.provider_name,
+                details={"input_too_long": too_long, "status_code": exc.response.status_code},
+            ) from None
 
         except Exception as exc:
             raise ModelEmbeddingError(
@@ -440,6 +476,8 @@ class OllamaModelProvider:
         if max_tokens is not None:
             # Ollama uses num_predict for maximum generated tokens.
             options["num_predict"] = max_tokens
+        if request.context_window_tokens is not None:
+            options["num_ctx"] = request.context_window_tokens
 
         payload: dict[str, Any] = {
             "model": model,
@@ -453,6 +491,9 @@ class OllamaModelProvider:
         # is the `format` property on /api/chat.
         if request.response_schema is not None:
             payload["format"] = request.response_schema
+
+        if request.reasoning_enabled is not None:
+            payload["think"] = request.reasoning_enabled
 
         return payload
 

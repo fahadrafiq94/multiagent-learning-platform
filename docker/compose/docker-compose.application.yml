@@ -1,0 +1,14 @@
+# Add after the base and knowledge overlays; run migrations before starting backend.
+# This explicitly activates durable chat. No credentials are baked into the image.
+services:
+  backend:
+    environment:
+      APPLICATION_STORAGE: postgres
+      APPLICATION_DATABASE_URL: postgresql://fredi_app_runtime:${APPLICATION_RUNTIME_PASSWORD:?Run application bootstrap first}@postgres:5432/fredi_knowledge
+      APPLICATION_PILOT_AUTH_SECRET: ${APPLICATION_PILOT_AUTH_SECRET:?Run application bootstrap first}
+      APPLICATION_DATABASE_POOL_SIZE: 4
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Exactly one worker; PostgreSQL also enforces exclusive runtime ownership.
+    command: [uv, run, uvicorn, app.main:app, --host, 0.0.0.0, --port, '8000', --workers, '1']

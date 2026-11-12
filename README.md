@@ -143,14 +143,18 @@ Core principles:
 
 * uv (environment management)
 * Ruff (formatting/linting), mypy (type checks)
-* pytest / pytest-asyncio (584 tests, incl. deterministic concurrency
-  suite)
+* pytest / pytest-asyncio (concurrency, PostgreSQL/Redis isolation and RAG coverage;
+  measured results in the Checkpoint 11 report)
 * Docker + Docker Compose (dev and prod configs)
 * GitHub Actions CI
 
+## Persistence and knowledge
+
+* PostgreSQL + pgvector (durable conversations/context and authorized knowledge retrieval)
+* Optional Redis knowledge cache; database/source backups and scratch restore verification
+
 ## Planned (later sprints)
 
-* PostgreSQL + pgvector (persistence + RAG retrieval)
 * Custom frontend (after backend behavior is stable)
 
 ---
@@ -220,6 +224,135 @@ docker compose -f docker/compose/docker-compose.prod.yml up --build
 
 ---
 
+## Optional knowledge infrastructure and general indexing (Sprint 5)
+
+Real PostgreSQL/pgvector and Redis services are available through optional Compose
+overlays. From the repository root:
+
+```bash
+python backend/scripts/knowledge_infra.py init
+python backend/scripts/knowledge_infra.py start
+python backend/scripts/knowledge_infra.py smoke
+```
+
+Credentials are generated in a Git-ignored local file. PostgreSQL/source storage
+use persistent volumes; Redis is disposable. The existing backend and Ollama
+containers are not recreated by this setup helper. Typed knowledge models, versioned
+SQL migrations, PostgreSQL/in-memory repositories, and source-storage interfaces are
+implemented. Student-facing retrieval integration and Redis caching remain pending.
+
+Setup, real-service tests, development ports, and production definitions are
+documented in [the knowledge infrastructure runbook](docs/operations/knowledge-infrastructure.md).
+Migrations, storage contracts, and repository test commands are documented in
+[the knowledge repository runbook](docs/operations/knowledge-repositories.md).
+Registered PDFs can now be imported into staging with durable page/section
+provenance. See [the import runbook](docs/operations/knowledge-imports.md).
+Sprint 5 now follows the approved [general RAG and persistence roadmap](docs/plans/sprint-5-rag-execution-roadmap.md).
+The obsolete classifier/instructor-review workflow has been removed in
+[Checkpoint 4A](docs/checkpoints/sprint-5-checkpoint-4a.md). Automatic
+indexing, hybrid request-time retrieval, PostgreSQL student/context/history storage
+and real Redis caching are in scope; vLLM is excluded. Current stored content is
+now indexed in a separate complete revision; specialist context integration is opt-in
+and remains disabled in the running stack pending model-quality acceptance.
+
+[Checkpoint 4B](docs/checkpoints/sprint-5-checkpoint-4b.md) adds migrated PostgreSQL
+repositories for identities, student/session context and conversation history, plus
+retry-safe turn storage. [Checkpoint 4C](docs/checkpoints/sprint-5-checkpoint-4c.md)
+connects durable HTTP chat through the application Compose overlay, with signed pilot
+credentials, owner-scoped history APIs, response replay and safe restart recovery.
+The base configuration retains explicit memory mode for tests/development; database
+failures never switch storage modes. See the [persistence runbook](docs/operations/application-persistence.md).
+Earlier sprint behavior and adaptive guidance are preserved.
+
+[Checkpoint 5](docs/checkpoints/sprint-5-checkpoint-5.md) adds source-linked contextual
+chunks, optional structural step facts, real pinned embeddings and PostgreSQL
+full-text/vector indexes. The initial three PDFs produced 264 chunks and 40 step
+records. Indexing is repeatable without re-embedding unchanged input. Subsequent
+operator updates published the revised collection; opt-in specialist integration is available. See the
+[indexing runbook](docs/operations/knowledge-indexing.md).
+
+[Checkpoint 6](docs/checkpoints/sprint-5-checkpoint-6.md) provides read-only scoped
+metadata and vector/full-text retrieval, source citations, bounded evidence and
+distinct no-evidence/error outcomes. The operator tool uses the knowledge reader
+role; see the [retrieval runbook](docs/operations/knowledge-retrieval.md). Student-facing
+specialist context integration is provided by opt-in Checkpoint 8.
+
+[Checkpoint 7](docs/checkpoints/sprint-5-checkpoint-7.md) adds bounded hybrid
+skip/reuse/metadata/search/clarify decisions, scoped fresh evidence reuse and read-only
+execution through the operator. Application validation controls permissions, revisions
+and budgets; the model interprets semantic needs. Prior chat defaults and adaptive
+guidance are preserved. See the [planning runbook](docs/operations/knowledge-planning.md).
+Actual model quality and latency are recorded separately from regression results;
+model calibration remains required before enabling it. Optional Redis integration
+is provided by Checkpoint 10.
+
+[Checkpoint 8](docs/checkpoints/sprint-5-checkpoint-8.md) connects optional retrieval
+after routing, budgets the complete specialist prompt and stores validated source
+citations with durable chat responses. It preserves adaptive guidance and excludes
+technical failures from student learning signals. Trusted server bindings control
+course access; RAG remains disabled in the running app while model-quality and latency
+issues are open. See the [integration runbook](docs/operations/rag-specialist-context.md).
+
+[Checkpoint 9](docs/checkpoints/sprint-5-checkpoint-9.md) adds authorized PDF intake
+and a durable worker for automatic extraction, embeddings and publication. Identical
+uploads reuse the index; explicit replacements publish a complete new revision while
+preserving earlier data. Failed updates and worker restarts are covered. The API and
+worker are opt-in; see the [intake runbook](docs/operations/knowledge-intake.md).
+The operator-updated collection is published with three PDFs, 242 chunks and 40 step
+facts. HTTP intake and student RAG remain separate opt-in settings.
+
+The [local management wizard](docs/operations/knowledge-management-wizard.md)
+automates operator setup and provides add/replace/job-retry menus. From backend,
+run `.venv/Scripts/python.exe -m scripts.manage_knowledge`. It preserves valid
+configuration, uses current database document IDs for explicit replacements and
+processes confirmed selections through the existing intake worker. Student RAG and
+HTTP intake remain separate opt-in settings.
+
+[Checkpoint 10](docs/checkpoints/sprint-5-checkpoint-10.md) adds optional real Redis
+caching of source chunks/facts and scoped SQL search candidates. PostgreSQL still
+checks permissions and revision identity for cache hits. Corrupt entries, expiry and
+outages fall back to authoritative reads; shared sources can be reused across students.
+The running backend keeps cache/RAG disabled. A read-only operator check verifies
+warm hits without enabling chat RAG; see the [cache runbook](docs/operations/knowledge-cache.md).
+[Checkpoint 11](docs/checkpoints/sprint-5-checkpoint-11.md) adds frozen retrieval/planner
+evaluation, all four guidance-level probes, private database/source backups and
+scratch restore/recovery checks. See the [evaluation and recovery runbook](docs/operations/rag-evaluation-and-recovery.md)
+and [release checklist](docs/releases/sprint-5-release-checklist.md).
+Model quality and latency acceptance remain open; student RAG stays disabled.
+The [first acceptance follow-up](docs/checkpoints/sprint-5-rag-diagnostics-1.md)
+fixes copied planner example IDs, adds private generation diagnostics and records
+laptop model comparisons. Faster model outputs still require source/teaching checks.
+
+The [synthetic student journey](docs/operations/student-simulation-and-observability.md)
+runs real onboarding and signed HTTP conversations against isolated PostgreSQL,
+exports presentation transcripts and preserves private model/state diagnostics.
+Request events now support bounded rotating retention and an optional persistent
+Docker log volume. This does not enable live RAG or close teaching acceptance gates.
+The [saved 12-turn presentation](docs/demos/student-journey-20261106-presentation-2/README.md)
+includes the actual transcript, timing chart, persistence checks and remaining issues.
+The [quality-improvement checklist](docs/plans/sprint-5-quality-improvement-checklist.md)
+now has [Step 1 evidence](docs/checkpoints/sprint-5-quality-step-1.md): focused
+development cases, a semantic review rubric, protected reserved cases and an
+offline replay baseline. [Step 2](docs/checkpoints/sprint-5-quality-step-2.md)
+implements explicit onboarding fields and supervisor-interpreted current-step
+updates before retrieval, with a [real HTTP demonstration](docs/demos/student-state-step2-v3-20261109/README.md).
+[Step 3](docs/checkpoints/sprint-5-quality-step-3.md) adds bounded routing dialogue
+and confirmed-fact previews, an interaction-purpose decision in the existing
+supervisor call, and application replies for clear acknowledgements and personal
+recall. Mixed external questions retain normal specialists and hybrid retrieval.
+One bounded progress-only verification can recover a declaration missed while
+routing its accompanying question. Explicit lookup targets stay separate from
+saved progress. The [seven-turn presentation](docs/demos/student-interactions-step3-v5-20261109/README.md)
+records onboarding, routing, direct replies, cross-reference retrieval and replay/restart.
+[Step 5](docs/checkpoints/sprint-5-quality-step-5.md), requested next, adds internal
+claim-to-passage links and one bounded support check across all three grounded
+specialists. Unsupported or unverified answers become neutral abstentions with no
+citations, learning signal or specialist state proposal. Exact quotations and a
+model's support verdict remain fallible; broad semantic and latency acceptance stays
+open. Step 4 assessment/adaptive guidance is still pending. No live flags changed.
+
+---
+
 # API
 
 The API surface follows the implemented routes (see
@@ -228,8 +361,11 @@ The API surface follows the implemented routes (see
 * health checks,
 * model/provider status endpoints,
 * `POST /orchestration/invoke` — the main student interaction endpoint
-  (`session_id`, `student_id`, `user_message`); returns the specialist
+  (`session_id`, `student_id`, `user_message`, plus `request_id` in durable mode);
+  requires a signed pilot bearer token and returns the specialist
   response, selected route, route reason, and request metadata.
+* authenticated conversation creation/listing/reopening, paginated message history
+  and turn status under `/conversations` (see the persistence runbook).
 
 Business logic lives in services and orchestration, not in route
 handlers.
@@ -256,7 +392,7 @@ deployment-specific is hardcoded.
 | 2 | Specialist agent foundations | ✅ v0.3.0 |
 | 3 | Semantic multi-agent orchestration (LangGraph) | ✅ v0.4.0 |
 | 4 | Context engineering (identity, state, context, onboarding, guidance, observability, concurrency) | ✅ v0.5.0 |
-| 5 | RAG / knowledge grounding (shared step metadata, AP+ Execution Guide, Process Coach Guide) | ⏳ next |
+| 5 | RAG / knowledge grounding (shared step metadata, AP+ Execution Guide, Process Coach Guide) | Checkpoint 11 evaluation/operations implemented; release quality/latency acceptance remains open; runtime RAG/intake/cache disabled |
 | — | Persistent DB (PostgreSQL + pgvector), frontend validation/implementation, vLLM serving | later |
 
 Release notes: [`docs/releases/`](docs/releases/).

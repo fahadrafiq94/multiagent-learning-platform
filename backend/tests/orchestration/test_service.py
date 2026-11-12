@@ -294,7 +294,8 @@ async def test_orchestration_service_emits_single_request_event_on_success(
 
     assert event["outcome"] == "completed"
 
-    assert event["error"] is None
+    assert event["error_present"] is False
+    assert "error" not in event
 
     assert event["student_id"] == "K12345"
 
@@ -304,7 +305,7 @@ async def test_orchestration_service_emits_single_request_event_on_success(
 
     assert event["route"] == "process_coach"
 
-    assert event["route_reason"] == ("Fake routing reason.")
+    assert "route_reason" not in event
 
     # Duration is wall-clock and clock-resolution dependent (coarse
     # on some virtualized Windows hosts); assert it is recorded, not
@@ -350,7 +351,8 @@ async def test_orchestration_service_emits_error_event_and_still_raises(
 
     assert event["outcome"] == "error"
 
-    assert event["error"] == "Graph failed"
+    assert event["error_present"] is True
+    assert "error" not in event
 
     assert event["student_id"] == "K12345"
 

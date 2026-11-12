@@ -43,6 +43,7 @@ RUN uv sync --frozen
 # Application source only
 # ---------------------------------------------------
 COPY backend/app ./app
+COPY backend/scripts ./scripts
 
 # ---------------------------------------------------
 # FastAPI
@@ -57,7 +58,7 @@ HEALTHCHECK \
     --timeout=10s \
     --start-period=15s \
     --retries=3 \
-    CMD curl --fail http://localhost:8000/model/health || exit 1
+    CMD curl --fail http://localhost:8000/ready && curl --fail http://localhost:8000/model/health || exit 1
 
 # ---------------------------------------------------
 # Default command

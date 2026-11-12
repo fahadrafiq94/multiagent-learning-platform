@@ -3,8 +3,9 @@ from __future__ import annotations
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, PrivateAttr
 
+from app.context.grounding import GroundingContext
 from app.context.schemas import (
     ContextChunk,
     ContextModel,
@@ -32,6 +33,26 @@ class ContextTarget(StrEnum):
     SCENARIO = "scenario"
     PROCESS_COACH = "process_coach"
     AP_PLUS_NAVIGATOR = "ap_plus_navigator"
+
+
+class RoutingFacts(ContextModel):
+    """Small projection of confirmed student facts; never a knowledge/access grant."""
+
+    company_context: str | None = Field(default=None, max_length=600)
+    learner_role: str | None = Field(default=None, max_length=255)
+    business_problem: str | None = Field(default=None, max_length=600)
+    business_goals: list[str] = Field(default_factory=list, max_length=3)
+
+    @classmethod
+    def from_card(cls, card: ScenarioCard | None):
+        if card is None:
+            return None
+        return cls(
+            company_context=card.company_context[:600] if card.company_context else None,
+            learner_role=card.learner_role,
+            business_problem=card.business_problem[:600] if card.business_problem else None,
+            business_goals=[goal[:200] for goal in card.business_goals[:3]],
+        )
 
 
 class RuntimeSessionContext(ContextModel):
@@ -84,6 +105,7 @@ class AgentContextView(ContextModel):
     scenario_setup: ScenarioSetupContext | None = None
 
     runtime_session: RuntimeSessionContext | None = None
+    routing_facts: RoutingFacts | None = None
 
     learning_profile: UserLearningProfile | None = None
     progress: UserProgress | None = None
@@ -97,6 +119,18 @@ class AgentContextView(ContextModel):
     user_adaptations: list[UserSpecificAdaptation] = Field(default_factory=list)
 
     knowledge_chunks: list[ContextChunk] = Field(default_factory=list)
+    # Verified source admission is server-only, never accepted from agent API JSON.
+    _grounding: GroundingContext | None = PrivateAttr(default=None)
+
+    @property
+    def grounding(self) -> GroundingContext | None:
+        return self._grounding
+
+    @grounding.setter
+    def grounding(self, value: GroundingContext | None) -> None:
+        self._grounding = (
+            GroundingContext.model_validate(value.model_dump()) if value is not None else None
+        )
 
     policy_version: str
 

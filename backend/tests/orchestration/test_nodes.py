@@ -604,12 +604,14 @@ def signal_state(
     session,
     assessment: (StudentResponseAssessment | None) = None,
     error: str | None = None,
+    metadata: dict | None = None,
 ) -> OrchestrationState:
     state: OrchestrationState = {
+        "user_message": "The invoice is a purchase order.",
         "user_id": user.user_id,
         "session_uuid": (session.session_id),
         "response_assessment": (assessment),
-        "metadata": {},
+        "metadata": (metadata or {}),
         "error": (error),
     }
 
@@ -622,6 +624,12 @@ def make_assessment(
     misconception: bool = False,
 ) -> StudentResponseAssessment:
     return StudentResponseAssessment(
+        assessability="assessable"
+        if understanding != UnderstandingLevel.NOT_APPLICABLE
+        else "not_assessable",
+        student_claim="The invoice is a purchase order."
+        if understanding != UnderstandingLevel.NOT_APPLICABLE
+        else None,
         understanding=understanding,
         misconception_detected=misconception,
         reason="Test judgment.",
@@ -636,6 +644,8 @@ async def test_execute_agent_node_carries_response_assessment() -> None:
         _,
     ) = create_model_service(
         specialist_assessment={
+            "assessability": "assessable",
+            "student_claim": "A purchase order approves itself.",
             "understanding": ("partially_correct"),
             "misconception_detected": (False),
             "reason": ("Close, but misses the approval rule."),
@@ -647,7 +657,7 @@ async def test_execute_agent_node_carries_response_assessment() -> None:
     base_context = await runtime.context_service.build(
         user_id=user.user_id,
         session_id=(session.session_id),
-        current_message=("Why do we need a purchase order?"),
+        current_message=("A purchase order approves itself."),
     )
 
     registry = create_agent_registry(model_service=model_service)
@@ -656,7 +666,7 @@ async def test_execute_agent_node_carries_response_assessment() -> None:
         {
             "session_id": str(session.session_id),
             "student_id": (user.student_id),
-            "user_message": ("Why do we need a purchase order?"),
+            "user_message": ("A purchase order approves itself."),
             "base_context": (base_context),
             "metadata": {},
             "error": None,
@@ -716,7 +726,7 @@ async def test_record_response_signal_persists_success_counter() -> None:
 
 
 @pytest.mark.asyncio
-async def test_record_response_signal_treats_partial_as_progress() -> None:
+async def test_record_response_signal_partial_is_not_independent_success() -> None:
     (
         model_service,
         _,
@@ -743,7 +753,7 @@ async def test_record_response_signal_treats_partial_as_progress() -> None:
         user_id=user.user_id,
     )
 
-    assert user_context.hint_state.successful_independent_steps == 1
+    assert user_context.hint_state.successful_independent_steps == 0
 
     assert user_context.hint_state.consecutive_unproductive_attempts == 0
 
@@ -1014,3 +1024,104 @@ async def test_record_response_signal_cross_user_isolation() -> None:
     assert context_a.hint_state.consecutive_unproductive_attempts == 0
 
     assert context_b.hint_state.consecutive_unproductive_attempts == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "rag,recorded",
+    [
+        pytest.param(
+            {"status": "found", "support_abstained": True, "teaching_abstained": False},
+            True,
+            id=("found_support_abstained"),
+        ),
+        pytest.param(
+            {"status": "found", "support_abstained": False, "teaching_abstained": True},
+            True,
+            id=("found_teaching_abstained"),
+        ),
+        pytest.param(
+            {"status": "no_evidence", "support_abstained": True, "teaching_abstained": False},
+            False,
+            id=("no_evidence_abstained"),
+        ),
+        pytest.param(
+            {"status": "found", "support_abstained": False, "teaching_abstained": False},
+            False,
+            id=("found_verified"),
+        ),
+        pytest.param({}, False, id=("no_rag_metadata")),
+    ],
+)
+async def test_record_response_signal_unverified_grounded_abstention(
+    rag: dict,
+    recorded: bool,
+) -> None:
+    (
+        model_service,
+        _,
+        _,
+    ) = create_model_service()
+
+    runtime, user, session = await create_runtime_user(model_service)
+    before = await runtime.user_context_service.get_or_create(user_id=user.user_id)
+    before_version = before.version
+
+    result = await record_response_signal_node(
+        signal_state(
+            user=user,
+            session=session,
+            metadata={"rag": rag},
+        ),
+        user_context_service=(runtime.user_context_service),
+    )
+
+    assert result["metadata"]["response_signal_recorded"] is recorded
+
+    if recorded:
+        assert result["metadata"]["response_reason"] == "unverified_grounded_abstention"
+    else:
+        assert result["metadata"]["response_reason"] == "no_assessment"
+
+    context = await runtime.user_context_service.get_required(
+        user_id=user.user_id,
+    )
+
+    assert context.hint_state.consecutive_unproductive_attempts == (1 if recorded else 0)
+    assert context.version == before_version + (1 if recorded else 0)
+
+
+@pytest.mark.asyncio
+async def test_consecutive_unverified_abstentions_escalate_guidance() -> None:
+    (
+        model_service,
+        _,
+        _,
+    ) = create_model_service()
+
+    runtime, user, session = await create_runtime_user(model_service)
+
+    base_context = await runtime.context_service.build(
+        user_id=user.user_id,
+        session_id=(session.session_id),
+        current_message=("Does the item-supplier master create both records?"),
+    )
+
+    rag = {"status": "found", "support_abstained": True, "teaching_abstained": False}
+    for _ in range(2):
+        state = signal_state(user=user, session=session, metadata={"rag": rag})
+        state["base_context"] = base_context
+        await record_response_signal_node(
+            state,
+            user_context_service=(runtime.user_context_service),
+        )
+
+    context = await runtime.user_context_service.get_required(
+        user_id=user.user_id,
+    )
+
+    assert context.hint_state.consecutive_unproductive_attempts == 2
+
+    assert context.hint_state.guidance_level == GuidanceLevel.DIRECTED
+
+    assert context.hint_state.last_change_reason == "repeated_struggle"

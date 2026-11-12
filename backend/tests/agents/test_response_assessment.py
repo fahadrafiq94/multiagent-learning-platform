@@ -90,6 +90,10 @@ def assessment_payload(
     reason: str = ("The student's answer shows the expected understanding."),
 ) -> dict[str, Any]:
     return {
+        "assessability": "assessable" if understanding != "not_applicable" else "not_assessable",
+        "student_claim": "The invoice is paid after the goods receipt is posted."
+        if understanding != "not_applicable"
+        else None,
         "understanding": (understanding),
         "misconception_detected": (misconception),
         "reason": (reason),

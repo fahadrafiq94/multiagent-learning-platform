@@ -1,0 +1,39 @@
+# Management intake is separate from student RAG. Use an operator-owned config.
+services:
+  backend:
+    environment:
+      KNOWLEDGE_INTAKE_ENABLED: ${KNOWLEDGE_INTAKE_ENABLED:-false}
+      KNOWLEDGE_INTAKE_CONFIG_FILE: /intake/config.json
+      KNOWLEDGE_DB_HOST: postgres
+      KNOWLEDGE_WRITER_PASSWORD: ${KNOWLEDGE_WRITER_PASSWORD:?Writer password is required}
+      KNOWLEDGE_SOURCE_ROOT: /sources
+    volumes:
+      - ${INTAKE_CONFIG_PATH:?Set an absolute trusted intake configuration path}:/intake/config.json:ro
+      - knowledge-sources:/sources
+
+  knowledge-intake-worker:
+    build:
+      context: ../..
+      dockerfile: docker/backend/Dockerfile
+    profiles: [knowledge-intake]
+    entrypoint: [python, -m, scripts.intake_knowledge]
+    command: [--config, /intake/config.json, --source-store, /sources, worker]
+    environment:
+      KNOWLEDGE_DB_HOST: postgres
+      KNOWLEDGE_WRITER_PASSWORD: ${KNOWLEDGE_WRITER_PASSWORD:?Writer password is required}
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-qwen3:4b}
+    volumes:
+      - ${INTAKE_CONFIG_PATH:?Set an absolute trusted intake configuration path}:/intake/config.json:ro
+      - knowledge-sources:/sources
+    networks: [fredi-network]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    mem_limit: 768m
+    cpus: 1.0
+    healthcheck:
+      disable: true
+    restart: unless-stopped

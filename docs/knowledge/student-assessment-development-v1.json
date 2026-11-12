@@ -1,0 +1,40 @@
+{
+  "version": "student-assessment-development-v1", "split": "development", "prepared_on": "2026-11-10",
+  "cases": [
+    {
+      "case_id": "assessment-correct-reasoning", "finding": "assessment", "stage": "conversation",
+      "message": "An asset must exist first because its tag refers to that asset. Is my reasoning right?",
+      "context": {"evidence": [{"label": "K1", "content": "Each asset tag refers to an existing asset. Creating a tag does not create the asset."}]},
+      "checks": [{"field": "assessment.understanding", "expected": "correct"}, {"field": "assessment.signal_recorded", "expected": true}],
+      "reviews": [{"rubric": "fact_fidelity", "expected": "Assess the student's endorsed explanation against the supplied relationship, not the presence of a question mark."}]
+    },
+    {
+      "case_id": "assessment-partial-with-misconception", "finding": "assessment", "stage": "conversation",
+      "message": "A tag refers to an asset, and creating the tag also creates that asset automatically.",
+      "context": {"evidence": [{"label": "K1", "content": "Each asset tag refers to an existing asset. Creating a tag does not create the asset."}]},
+      "checks": [{"field": "assessment.understanding", "operator": "one_of", "expected": ["partially_correct", "incorrect"]}],
+      "reviews": [{"rubric": "fact_fidelity", "expected": "Detect the incorrect creation claim; do not count this mixed claim as a fully correct independent success."}]
+    },
+    {
+      "case_id": "assessment-quoted-unendorsed", "finding": "assessment", "stage": "conversation",
+      "message": "The guide says 'creating a tag creates the asset'. I am asking what that sentence means, not claiming it is true.",
+      "context": {"evidence": [{"label": "K1", "content": "Each asset tag refers to an existing asset. Creating a tag does not create the asset."}]},
+      "checks": [{"field": "assessment.understanding", "operator": "one_of", "expected": [null, "not_applicable"]}, {"field": "assessment.signal_recorded", "expected": false}],
+      "reviews": [{"rubric": "fact_fidelity", "expected": "Do not grade a quoted assertion that the student explicitly declines to endorse."}]
+    },
+    {
+      "case_id": "assessment-insufficient-policy", "finding": "assessment", "stage": "conversation",
+      "message": "I believe this company approves every asset on Thursdays.",
+      "context": {"evidence": [{"label": "K1", "content": "Each asset tag refers to an existing asset. No company approval schedule is specified here."}]},
+      "checks": [{"field": "assessment.understanding", "operator": "one_of", "expected": [null, "not_applicable"]}, {"field": "assessment.signal_recorded", "expected": false}],
+      "reviews": [{"rubric": "fact_fidelity", "expected": "The supplied context cannot establish the approval schedule. Stay uncertain rather than inventing a confident grade."}]
+    },
+    {
+      "case_id": "assessment-state-and-hint", "finding": "assessment", "stage": "conversation",
+      "message": "I am currently on TASK-L7; could you give me one hint?",
+      "context": {"evidence": [{"label": "K1", "content": "Each asset tag refers to an existing asset. Creating a tag does not create the asset."}]},
+      "checks": [{"field": "assessment.understanding", "operator": "one_of", "expected": [null, "not_applicable"]}, {"field": "assessment.signal_recorded", "expected": false}],
+      "reviews": [{"rubric": "fact_fidelity", "expected": "Progress and a hint request do not independently demonstrate correct or incorrect process understanding."}]
+    }
+  ]
+}

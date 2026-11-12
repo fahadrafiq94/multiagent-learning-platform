@@ -1,0 +1,21 @@
+{
+  "embedding": {
+    "provider": "ollama",
+    "model": "nomic-embed-text-v2-moe:latest",
+    "revision": "ff9c2f10ef5e3722623a1b396e1e04efc27a93112c83e9b7b7b9ca1d05620965",
+    "dimension": 768,
+    "normalized": true,
+    "query_prefix": "search_query: ",
+    "document_prefix": "search_document: "
+  },
+  "chunking": {
+    "max_chars": 1000,
+    "overlap_chars": 120,
+    "context_chars": 160,
+    "max_chunks": 20000
+  },
+  "metadata": {
+    "namespace": "ap40"
+  },
+  "batch_size": 8
+}

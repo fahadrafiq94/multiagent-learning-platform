@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from app.services.model_service.schemas import (
+    EmbeddingModelInfo,
     ModelChatRequest,
     ModelChatResponse,
     ModelEmbeddingRequest,
@@ -11,6 +12,11 @@ from app.services.model_service.schemas import (
     ModelHealthResponse,
     ModelStreamChunk,
 )
+
+
+@runtime_checkable
+class EmbeddingInspector(Protocol):
+    async def inspect_embedding_model(self, model: str) -> EmbeddingModelInfo: ...
 
 
 class ModelProvider(Protocol):

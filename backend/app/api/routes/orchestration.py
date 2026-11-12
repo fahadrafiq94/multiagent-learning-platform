@@ -2,15 +2,16 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from app.api.dependencies import authorize_invocation, get_runtime
+from app.identity import UserIdentity
 from app.orchestration import (
     OrchestrationClientError,
     OrchestrationRequest,
     OrchestrationResponse,
     OrchestrationService,
     OrchestrationServiceError,
-    create_orchestration_service,
 )
 from app.services.model_service.exceptions import ModelServiceError
 
@@ -20,17 +21,16 @@ router = APIRouter(
 )
 
 
-def get_orchestration_service() -> OrchestrationService:
-    """Create the configured orchestration service.
+def get_orchestration_service(request: Request) -> OrchestrationService:
+    """Return the lifespan-owned orchestration service.
 
     This dependency can be overridden in tests.
 
-    Runtime construction (including model-service creation) happens
-    here, so a misconfigured provider fails with a clean 503 instead
-    of an unhandled 500.
+    Startup constructs the model service and configured repositories.
+    Requests without a ready lifespan runtime fail with 503.
     """
     try:
-        return create_orchestration_service()
+        return get_runtime(request).orchestration_service
     except ModelServiceError as exc:
         raise HTTPException(
             status_code=503,
@@ -52,11 +52,12 @@ OrchestrationServiceDep = Annotated[
 async def invoke_orchestration(
     request: OrchestrationRequest,
     orchestration_service: OrchestrationServiceDep,
+    current_user: Annotated[UserIdentity, Depends(authorize_invocation)],
 ) -> OrchestrationResponse:
     """Execute the LangGraph orchestration workflow for one user message."""
 
     try:
-        return await orchestration_service.execute(request)
+        return await orchestration_service.execute(request, trusted_user_id=current_user.user_id)
     except OrchestrationClientError as exc:
         # Client-side input problems are 4xx, never server errors.
         raise HTTPException(

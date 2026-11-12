@@ -16,6 +16,7 @@ from app.agents.exceptions import (
 from app.agents.scenario import (
     SCENARIO_EXTRACTION_SYSTEM_PROMPT,
     ScenarioAgent,
+    onboarding_generation_schema,
 )
 from app.agents.scenario_schemas import (
     ScenarioDraftExtraction,
@@ -169,7 +170,9 @@ async def test_extract_draft_uses_structured_output_schema() -> None:
 
     generated_request = get_generated_request(generate_mock)
 
-    assert generated_request.response_schema == ScenarioDraftExtraction.model_json_schema()
+    assert generated_request.response_schema == onboarding_generation_schema(
+        ScenarioDraftExtraction
+    )
 
     assert generated_request.temperature == 0.0
 

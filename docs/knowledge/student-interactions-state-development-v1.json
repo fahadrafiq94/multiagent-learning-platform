@@ -1,0 +1,83 @@
+{
+  "version": "student-interactions-state-development-v1",
+  "split": "development",
+  "prepared_on": "2026-11-09",
+  "baseline_run_id": "20261106T080902Z-cba0e4",
+  "cases": [
+    {
+      "case_id": "mixed-concept-step",
+      "finding": "routing",
+      "stage": "conversation",
+      "message": "I have moved from FLOW-P2 to FLOW-Q7 and am working there now, not finished. Why is approval needed before posting?",
+      "context": {"current_step_id": "FLOW-P2"},
+      "checks": [
+        {"field": "route", "expected": "process_coach"},
+        {"field": "state.current_step_id", "expected": "FLOW-Q7"}
+      ],
+      "reviews": [{"rubric": "state_intent", "expected": "Keep the explicit current declaration while routing the separate conceptual question. Do not complete either step."}]
+    },
+    {
+      "case_id": "mixed-navigation-step",
+      "finding": "routing",
+      "stage": "conversation",
+      "message": "I am doing FLOW-Q9 now. I understand approval; where do I select the supplier on the screen?",
+      "context": {"current_step_id": "FLOW-P2"},
+      "checks": [
+        {"field": "route", "expected": "ap_plus_navigator"},
+        {"field": "state.current_step_id", "expected": "FLOW-Q9"}
+      ],
+      "reviews": [{"rubric": "state_intent", "expected": "Save FLOW-Q9 independently of the UI question; do not copy policy-example labels."}]
+    },
+    {
+      "case_id": "saved-progress-recall",
+      "finding": "retrieval_need",
+      "stage": "conversation",
+      "message": "Remind me where I said I am working.",
+      "context": {"current_step_id": "FLOW-A2"},
+      "checks": [
+        {"field": "retrieval.searched", "expected": false},
+        {"field": "state.current_step_id", "expected": "FLOW-A2"}
+      ],
+      "reviews": [{"rubric": "state_intent", "expected": "Return saved FLOW-A2. The word said does not require a separate historical quote for a structured progress value."}]
+    },
+    {
+      "case_id": "unknown-supplier-not-progress",
+      "finding": "retrieval_need",
+      "stage": "conversation",
+      "message": "Which supplier did I say I would contact first?",
+      "context": {"current_step_id": "FLOW-A2"},
+      "checks": [
+        {"field": "retrieval.searched", "expected": false},
+        {"field": "state.current_step_id", "expected": "FLOW-A2"}
+      ],
+      "reviews": [{"rubric": "state_intent", "expected": "Ask for the unavailable supplier detail. Do not substitute FLOW-A2, a company goal, or a policy example."}]
+    },
+    {
+      "case_id": "known-supplier-with-progress",
+      "finding": "retrieval_need",
+      "stage": "conversation",
+      "message": "Which supplier did I say I would contact first?",
+      "context": {
+        "current_step_id": "FLOW-A2",
+        "history": [{"role": "user", "content": "I will contact Willow Components first."}]
+      },
+      "checks": [
+        {"field": "retrieval.searched", "expected": false},
+        {"field": "state.current_step_id", "expected": "FLOW-A2"}
+      ],
+      "reviews": [{"rubric": "fact_fidelity", "expected": "Recall the actual student statement about Willow Components; do not substitute saved progress."}]
+    },
+    {
+      "case_id": "navigation-is-not-progress-declaration",
+      "finding": "routing",
+      "stage": "conversation",
+      "message": "I know the business reason. Where do I select it on the screen?",
+      "context": {},
+      "checks": [
+        {"field": "route", "expected": "ap_plus_navigator"},
+        {"field": "state.current_step_id", "expected": null}
+      ],
+      "reviews": []
+    }
+  ]
+}

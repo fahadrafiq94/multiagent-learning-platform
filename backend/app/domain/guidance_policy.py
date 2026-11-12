@@ -111,7 +111,7 @@ def select_guidance(
     if (
         session_context.active_blocker is None
         and hint_state.consecutive_unproductive_attempts == 0
-        and hint_state.successful_independent_steps >= 2
+        and hint_state.consecutive_productive_attempts >= 2
     ):
         level = _one_step_down(level)
         reason = "productive_reasoning"
@@ -133,6 +133,7 @@ class ResponseSignalUpdate:
     struggle_delta: int = 0
 
     reset_struggle: bool = False
+    reset_productive: bool = False
 
 
 def assessment_signal(
@@ -145,15 +146,17 @@ def assessment_signal(
     these bounded, deterministic movements are.
     """
 
-    if assessment is None:
+    if (
+        assessment is None
+        or assessment.assessability != "assessable"
+        or not assessment.student_claim
+        or not assessment.student_claim.strip()
+    ):
         return ResponseSignalUpdate()
 
     understanding = assessment.understanding
 
-    if understanding in (
-        UnderstandingLevel.CORRECT,
-        UnderstandingLevel.PARTIALLY_CORRECT,
-    ):
+    if understanding == UnderstandingLevel.CORRECT and not assessment.misconception_detected:
         return ResponseSignalUpdate(
             success_delta=1,
             reset_struggle=True,
@@ -165,6 +168,32 @@ def assessment_signal(
     ):
         return ResponseSignalUpdate(
             struggle_delta=1,
+            reset_productive=True,
         )
 
+    if understanding == UnderstandingLevel.PARTIALLY_CORRECT:
+        return ResponseSignalUpdate(reset_productive=True)
+
     return ResponseSignalUpdate()
+
+
+def grounded_abstention_signal(
+    *,
+    rag_status: str | None,
+    support_abstained: bool | None,
+    teaching_abstained: bool | None,
+) -> ResponseSignalUpdate:
+    """
+    Map the application-owned grounding outcome to bounded counter movements.
+
+    Evidence was found but the generated answer failed verification: the
+    student's turn did not advance, so it counts as one unproductive
+    attempt. A no_evidence/unavailable/error abstention means the course
+    cannot answer the question at all, which is an availability outcome,
+    not a student struggle signal, and produces no movement.
+    """
+
+    if rag_status != "found" or not (support_abstained or teaching_abstained):
+        return ResponseSignalUpdate()
+
+    return ResponseSignalUpdate(struggle_delta=1, reset_productive=True)
