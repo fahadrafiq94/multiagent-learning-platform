@@ -29,6 +29,9 @@ def test_grounded_response_contract_keeps_student_text_separate_and_preserves_gu
     )
     system, user = prepared.model_request.messages
     assert "CURRENT RESPONSE CONTRACT:" in system.content
+    assert system.content.index("CURRENT SOURCE POLICY:") < system.content.index(
+        "FILTERED RUNTIME CONTEXT:"
+    )
     assert "RESPONSE SCOPE:" in system.content
     assert "own JSON fields" in system.content
     assert "Which prerequisite do you think is missing here?" not in system.content

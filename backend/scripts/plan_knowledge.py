@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import sys
+from contextlib import AsyncExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -19,6 +20,8 @@ from app.knowledge.schemas import AccessScope
 from app.knowledge.search_repository import PostgresSearchRepository
 from app.services.model_service import create_model_service
 from app.services.model_service.exceptions import ModelServiceError
+from app.services.model_service.profiles import resolve_profile
+from app.services.model_service.service import close_model_services
 from scripts.retrieve_knowledge import retrieval_dsn
 
 
@@ -42,30 +45,35 @@ async def execute(args) -> int:
         cases = json.loads(args.cases.read_text(encoding="utf-8"))["cases"]
         if not 1 <= len(cases) <= 30:
             raise ValueError("Expected one to thirty operator cases.")
-    job_settings = settings.model_copy(
-        update={
-            "model_provider": "ollama",
-            "ollama_base_url": args.model_url or settings.ollama_base_url,
-            "ollama_chat_model": args.planner_model,
-            "ollama_embedding_model": settings.ollama_embedding_model or "unused-until-admission",
-            "model_max_retries": 0,
-            "model_request_timeout_seconds": args.timeout,
-        }
-    )
-    planner_model = create_model_service(job_settings)
-    config = PlannerConfig(model=args.planner_model, timeout_seconds=args.timeout)
+    values = {
+        "rag_planner_model": args.planner_model,
+        "model_max_retries": 0,
+        "model_request_timeout_seconds": args.timeout,
+    }
+    if getattr(args, "planner_provider", None):
+        values["rag_planner_provider"] = args.planner_provider
+    job_settings = settings.model_copy(update=values)
+    selected = resolve_profile(job_settings, "rag_planner", base_url=args.model_url)
+    planner_model = create_model_service(job_settings, role="rag_planner", base_url=args.model_url)
+    config = PlannerConfig(model=selected.model, timeout_seconds=args.timeout)
     failed = 0
-    async with KnowledgeDatabase(KnowledgeDatabaseConfig(dsn=retrieval_dsn())) as database:
+    async with (
+        AsyncExitStack() as resources,
+        KnowledgeDatabase(KnowledgeDatabaseConfig(dsn=retrieval_dsn())) as database,
+    ):
+        resources.push_async_callback(close_model_services, planner_model)
         repository = PostgresSearchRepository(database)
         scope = AccessScope(access_domain=args.scope_domain, user_id=args.owner_user_id)
         pin = await repository.admit(args.collection, args.revision, scope)
         # Embedding configuration comes from the admitted index, not from planner output.
-        embedding_settings = job_settings.model_copy(
-            update={
-                "ollama_embedding_model": pin.revision.embedding.model if pin else "unavailable",
-            }
+        embeddings = create_model_service(
+            settings,
+            role="embedding",
+            legacy_model=pin.revision.embedding.model if pin else None,
+            base_url=getattr(args, "embedding_url", None),
         )
-        retrieval = KnowledgeRetrievalService(repository, create_model_service(embedding_settings))
+        resources.push_async_callback(close_model_services, embeddings)
+        retrieval = KnowledgeRetrievalService(repository, embeddings)
         service = HybridRetrievalService(retrieval, planner_model, config)
         for case in cases:
             values = dict(case)
@@ -162,7 +170,9 @@ def main() -> int:
     parser.add_argument(
         "--seed-query", help="Fetch fresh evidence before planning, for reuse testing."
     )
-    parser.add_argument("--model-url")
+    parser.add_argument("--model-url", help="Explicit planner endpoint override.")
+    parser.add_argument("--planner-provider", choices=["ollama", "vllm"])
+    parser.add_argument("--embedding-url", help="Separate embedding endpoint override.")
     parser.add_argument("--timeout", type=float, default=60)
     parser.add_argument("--max-chars", type=int, default=8000)
     parser.add_argument("--include-evidence", action="store_true")

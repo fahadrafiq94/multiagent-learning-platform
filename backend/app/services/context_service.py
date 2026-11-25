@@ -89,6 +89,7 @@ class ContextService:
         trace_id: UUID | None = None,
         current_message_id: UUID | None = None,
         recent_message_limit: int | None = None,
+        excluded_message_ids: tuple[UUID, ...] = (),
     ) -> AgentContext:
         """
         Build the common AgentContext for one request.
@@ -122,6 +123,7 @@ class ContextService:
             session_id=session_id,
             current_message_id=(current_message_id),
             limit=policy.max_recent_messages,
+            excluded_message_ids=excluded_message_ids,
         )
 
         # Guidance is selected centrally by deterministic policy
@@ -195,6 +197,7 @@ class ContextService:
         session_id: UUID,
         current_message_id: UUID | None,
         limit: int,
+        excluded_message_ids: tuple[UUID, ...] = (),
     ) -> list[ConversationMessage]:
         """
         Load bounded recent conversation history.
@@ -205,8 +208,10 @@ class ContextService:
 
         repository_limit = limit
 
+        excluded = set(excluded_message_ids)
         if current_message_id is not None:
-            repository_limit += 1
+            excluded.add(current_message_id)
+        repository_limit += len(excluded)
 
         messages = await self._conversation_service.get_recent_messages(
             user_id=user_id,
@@ -214,10 +219,8 @@ class ContextService:
             limit=repository_limit,
         )
 
-        if current_message_id is not None:
-            messages = [
-                message for message in messages if (message.message_id != current_message_id)
-            ]
+        if excluded:
+            messages = [message for message in messages if message.message_id not in excluded]
 
         if len(messages) > limit:
             messages = messages[-limit:]

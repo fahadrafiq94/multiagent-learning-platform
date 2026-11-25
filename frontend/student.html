@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>FREDi · Student access</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="/student/css/fredi.css?v=4">
+  <link rel="stylesheet" href="/student/css/student.css?v=6">
+  <script type="module" src="/student/js/student.js?v=6"></script>
+</head>
+<body>
+  <main class="student-access">
+    <header class="access-brand"><span class="access-mark" aria-hidden="true">F</span><span>FREDi</span></header>
+    <section id="loading" class="access-card" aria-live="polite"><p>Checking your session…</p></section>
+    <section id="sign-in" class="access-card" hidden aria-labelledby="access-title">
+      <h1 id="access-title">Welcome to FREDi</h1>
+      <p>Your learning companion for APplus.</p>
+      <form id="access-form" method="post" action="/auth/session">
+        <div class="field">
+          <label for="credential">Access credential</label>
+          <p class="help" id="credential-help">Enter the credential provided by your instructor.</p>
+          <input class="input" id="credential" name="credential" type="password" required maxlength="1024" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="credential-help access-error">
+        </div>
+        <p id="access-error" class="err" role="alert"></p>
+        <button class="btn primary" id="sign-in-button" type="submit">Sign in</button>
+      </form>
+    </section>
+    <section id="signed-in" class="access-card" hidden aria-labelledby="welcome-title">
+      <h1 id="welcome-title">FREDi</h1>
+      <p>Signed in as <strong id="student-id"></strong></p>
+      <p id="session-error" class="err" role="alert"></p>
+      <button class="btn outline" id="sign-out" type="button">Sign out</button>
+    </section>
+  </main>
+  <div id="workspace" hidden></div>
+</body>
+</html>

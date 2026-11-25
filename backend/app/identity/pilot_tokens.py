@@ -35,6 +35,10 @@ def issue_token(user_id: UUID, secret: SecretStr, *, lifetime_seconds: int = 360
 
 
 def verify_token(token: str, secret: SecretStr) -> UUID:
+    return verify_token_and_expiry(token, secret)[0]
+
+
+def verify_token_and_expiry(token: str, secret: SecretStr) -> tuple[UUID, int]:
     try:
         if len(token) > 1024:
             raise ValueError
@@ -52,6 +56,6 @@ def verify_token(token: str, secret: SecretStr) -> UUID:
             or claims["exp"] <= time.time()
         ):
             raise ValueError
-        return UUID(claims["sub"])
+        return UUID(claims["sub"]), claims["exp"]
     except (ValueError, TypeError, KeyError, UnicodeError):
         raise ValueError("Invalid or expired pilot credential.") from None

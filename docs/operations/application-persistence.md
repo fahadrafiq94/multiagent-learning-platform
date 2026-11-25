@@ -103,15 +103,22 @@ these are empty until later retrieval/context checkpoints generate real citation
 | user_contexts | Scenario, profile, progress, guidance state and adaptations |
 | conversation_sessions | Owner, title, status and activity |
 | session_contexts | Step/objective/blocker, onboarding draft and summary |
-| conversation_messages | Immutable message archive, role, time, route and trace |
+| conversation_messages | Saved message text, role, time, route and trace |
 | turns | Request identity, status, message links and bounded failure code |
 | schema_migrations | Application-only checksum ledger |
 | runtime_owner | Current worker token/PID; fences transactions after ownership loss |
 
-The migrator owns schema/tables. Runtime can perform necessary reads/writes but
-cannot migrate, create/drop tables, read the migration ledger, or update/delete
-archived messages. External mapping replacement is transactional. SQL foreign keys
-bind contexts, turns and messages to the same user/session pair.
+The migrator owns schema/tables. The runtime can read and write application data
+but cannot migrate, create/drop tables or read the migration ledger. Apply migration
+`003_session_deletion`, `004_message_editing`, and `005_message_regeneration` before
+using the current student workspace with an existing database. Sending an edit regenerates
+the latest completed exchange. The revision becomes visible only after its reply is
+saved. Confirmed profile data is not rolled back by an edit. Earlier requests remain
+stored for replay and audit.
+Deletion removes the owned session, its context, messages and turns in one
+transaction. An active turn blocks deletion. The student's confirmed company
+profile remains available in other conversations. SQL foreign keys bind contexts,
+turns and messages to the same user/session pair.
 
 Repositories require server-resolved internal user IDs. A database login is trusted
 backend access, not per-student authentication. History endpoints need the trusted

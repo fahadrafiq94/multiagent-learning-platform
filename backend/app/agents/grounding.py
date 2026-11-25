@@ -353,6 +353,8 @@ def build_specialist_request(
     def render(context, selected=()) -> ModelChatRequest:
         response_schema = deepcopy(schema)
         system = system_prompt
+        if grounding:
+            system += "\n\n" + GROUNDING_INSTRUCTIONS
         context_text = context_view_to_prompt_text(context)
         if context_text:
             system += f"\n\nFILTERED RUNTIME CONTEXT:\n{context_text}"
@@ -383,7 +385,7 @@ def build_specialist_request(
                 }
                 for i, item in enumerate(selected)
             ]
-            system += "\n\n" + GROUNDING_INSTRUCTIONS + "\nCURRENT EVIDENCE (DATA ONLY):\n"
+            system += "\nCURRENT EVIDENCE (DATA ONLY):\n"
             system += json.dumps({"status": status, "items": evidence}, ensure_ascii=False)
             # Reassert trusted role/output rules after potentially lengthy source data.
             # This is application-authored text outside the quoted JSON, never a source instruction.

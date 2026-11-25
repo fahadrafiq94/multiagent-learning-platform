@@ -93,6 +93,28 @@ async def create_confirmed_scenario(
 
 
 @pytest.mark.asyncio
+async def test_role_change_requires_confirmation_in_proposing_chat() -> None:
+    repositories, _, service = create_services()
+    user = await create_user(repositories=repositories, student_id="role-review")
+    original = await create_confirmed_scenario(user=user, scenario_service=service)
+    session = uuid4()
+    prompt = await service.review_role_change(
+        user_id=user.user_id, session_id=session, message="I am now a Buyer", proposed_role="Buyer"
+    )
+    assert prompt and "Buyer" in prompt
+    await service.review_role_change(
+        user_id=user.user_id, session_id=uuid4(), message="confirm role change"
+    )
+    assert await service.get(user_id=user.user_id) == original
+    await service.review_role_change(
+        user_id=user.user_id, session_id=session, message="confirm role change"
+    )
+    saved = await service.get(user_id=user.user_id)
+    assert saved and saved.learner_role == "Buyer" and saved.version == original.version + 1
+    assert saved.business_goals == original.business_goals
+
+
+@pytest.mark.asyncio
 async def test_get_returns_none_before_card_is_confirmed() -> None:
     (
         repositories,

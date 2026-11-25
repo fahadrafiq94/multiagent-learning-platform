@@ -122,6 +122,42 @@ class ScenarioDraftExtraction(BaseModel):
         return result
 
 
+class ScenarioOpening(ScenarioDraftExtraction):
+    """A coaching reply keeps the conversation open. Null starts formal collection."""
+
+    brainstorm_reply: Annotated[
+        str | None, StringConstraints(strip_whitespace=True, min_length=1, max_length=1500)
+    ] = None
+
+
+class ScenarioOnboardingResponse(BaseModel):
+    """
+    One conversational follow-up composed while scenario collection continues.
+
+    The application owns the lifecycle; the model only writes this text.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    content: str = Field(
+        min_length=1,
+        max_length=1_500,
+    )
+
+    @field_validator("content")
+    @classmethod
+    def normalize_content(
+        cls,
+        value: str,
+    ) -> str:
+        normalized = " ".join(value.split())
+
+        if not normalized:
+            raise ValueError("content must not be blank.")
+
+        return normalized
+
+
 class ScenarioReviewIntent(StrEnum):
     CONFIRM = "confirm"
     CORRECT = "correct"
@@ -144,6 +180,11 @@ class ScenarioReviewDecision(BaseModel):
     )
 
     correction: ScenarioDraftExtraction | None = None
+
+    suggestion_reply: (
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
+        | None
+    ) = None
 
     @model_validator(mode="after")
     def validate_consistency(

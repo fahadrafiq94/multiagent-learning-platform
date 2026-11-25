@@ -43,6 +43,7 @@ from app.services.model_service import (
     ModelService,
     create_model_service,
 )
+from app.services.model_service.service import service_for_role
 from app.services.scenario_card_service import (
     ScenarioCardService,
 )
@@ -115,6 +116,7 @@ def build_orchestration_runtime(
         session_context_repository=(runtime_repositories.session_contexts),
         conversation_repository=(runtime_repositories.conversations),
         session_initializer=runtime_repositories.session_initializer,
+        turn_store=(runtime_repositories.turns),
     )
 
     user_context_service = UserContextService(
@@ -166,7 +168,7 @@ def build_orchestration_runtime(
     session_summary_service = SessionSummaryService(
         conversation_service=(conversation_service),
         session_context_service=(session_context_service),
-        model_service=(model_service),
+        model_service=service_for_role(model_service, "summary"),
         recent_window=(settings.context_max_recent_messages),
         min_new_messages=(settings.context_summary_min_new_messages),
         max_items_per_list=(settings.context_summary_max_items_per_list),
@@ -176,16 +178,20 @@ def build_orchestration_runtime(
     )
 
     scenario_agent = ScenarioAgent(
-        model_service=model_service,
+        model_service=service_for_role(model_service, "scenario_agent"),
+        model=settings.scenario_agent_model or None,
     )
 
     registry = create_agent_registry(
         model_service=model_service,
         scenario_agent=scenario_agent,
+        process_coach_model=settings.process_coach_agent_model or None,
+        ap_plus_navigator_model=settings.ap_plus_navigator_model or None,
     )
 
     orchestrator = OrchestratorAgent(
-        model_service=model_service,
+        model_service=service_for_role(model_service, "orchestrator"),
+        model=settings.orchestrator_model or None,
     )
 
     interaction_service = ScenarioOnboardingInteractionService(

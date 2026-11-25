@@ -384,3 +384,51 @@ async def test_unclear_review_does_not_confirm_card() -> None:
     card = await runtime.scenario_card_service.get(user_id=user.user_id)
 
     assert card is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "choice", ["Let's start onboarding with the bakery.", "I'll go with the bakery."]
+)
+async def test_brainstorm_before_saving_a_chosen_company(choice) -> None:
+    runtime, user, session, service, generate = await create_setup()
+    reply = "A bakery plans ingredients; a bicycle maker plans parts. Which appeals to you?"
+    generate.side_effect = [
+        ModelChatResponse(
+            content=json.dumps({"brainstorm_reply": reply, "company_context": "Bikes"}),
+            latency_ms=1.0,
+            model="fake-model",
+            provider="ollama",
+        ),
+        ModelChatResponse(
+            content=json.dumps(
+                {
+                    "brainstorm_reply": None,
+                    "company_context": "A bakery",
+                    "learner_role": "Shop owner",
+                    "business_goals": ["Raise margins"],
+                }
+            ),
+            latency_ms=1.0,
+            model="fake-model",
+            provider="ollama",
+        ),
+    ]
+    scope = dict(user_id=user.user_id, session_id=session.session_id)
+    opening = await build_scenario_view(
+        runtime, user=user, session=session, message="Can we explore ideas?"
+    )
+    result = await service.handle_turn(context=opening)
+    assert result.outcome == ScenarioInteractionOutcome.BRAINSTORMING
+    assert result.reply == reply and not result.changed
+    assert await runtime.scenario_onboarding_service.get_draft(**scope) is None
+    await runtime.conversation_service.append_assistant_message(**scope, content=reply)
+    choosing = await build_scenario_view(runtime, user=user, session=session, message=choice)
+    assert choosing.scenario_setup.status == ScenarioSetupStatus.NOT_STARTED
+    started = await service.handle_turn(context=choosing)
+    assert started.status == ScenarioSetupStatus.COLLECTING
+    assert started.draft.company_context == "A bakery"
+    assert started.draft.learner_role is None and started.draft.business_goals == []
+    prompt = json.loads(generate.await_args.args[0].messages[-1].content)
+    assert prompt["current_message"] == choice
+    assert {"role": "assistant", "text": reply} in prompt["recent_conversation"]

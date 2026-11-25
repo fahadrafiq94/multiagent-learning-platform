@@ -128,12 +128,23 @@ async def running(
     monkeypatch.setattr(settings, "application_database_url", pg.database.config.dsn)
     monkeypatch.setattr(settings, "application_pilot_auth_secret", SECRET)
     monkeypatch.setattr(settings, "rag_enabled", True)
+    for field in (
+        "embedding_provider",
+        "embedding_base_url",
+        "embedding_model",
+        "rag_planner_provider",
+        "rag_planner_base_url",
+        "rag_planner_model",
+        "rag_planner_reasoning_control",
+        "rag_planner_reasoning_enabled",
+    ):
+        monkeypatch.setattr(settings, field, None)
     monkeypatch.setattr(settings, "rag_config_file", path)
     monkeypatch.setattr(settings, "rag_database_url", kp.reader_database.config.dsn)
     monkeypatch.setattr("app.runtime.create_model_service", lambda: model)
     monkeypatch.setattr(
         "app.knowledge.runtime.create_model_service",
-        lambda cfg: planner if cfg.ollama_chat_model == "planner-test" else QueryModel(),
+        lambda cfg, **options: planner if options.get("role") == "rag_planner" else QueryModel(),
     )
     async with runtime_lifespan(app):
         async with httpx.AsyncClient(

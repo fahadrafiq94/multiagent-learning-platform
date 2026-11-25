@@ -146,14 +146,17 @@ class OrchestrationService:
                 request,
                 user_id=identity.user_id,
                 session_id=session_uuid,
-                run=lambda message_id, trace_id: self._execute_graph(
+                run=lambda message_id, trace_id, replaced_message_ids: self._execute_graph(
                     request,
                     identity,
                     session_uuid,
                     current_message_id=message_id,
                     trace_id=trace_id,
+                    replaced_message_ids=replaced_message_ids,
                 ),
             )
+        if request.edit_message_id is not None:
+            raise OrchestrationClientError("Message regeneration requires PostgreSQL storage.")
         return await self._execute_graph(request, identity, session_uuid)
 
     async def _execute_graph(
@@ -164,6 +167,7 @@ class OrchestrationService:
         *,
         current_message_id: UUID | None = None,
         trace_id: UUID | None = None,
+        replaced_message_ids: tuple[UUID, ...] = (),
     ) -> OrchestrationResponse:
         trace_id = trace_id or uuid4()
 
@@ -187,6 +191,8 @@ class OrchestrationService:
             "metadata": metadata,
             "error": None,
         }
+        if replaced_message_ids:
+            initial_state["replaced_message_ids"] = replaced_message_ids
         if current_message_id is not None:
             initial_state["turn_managed"] = True
             initial_state["current_message_id"] = current_message_id

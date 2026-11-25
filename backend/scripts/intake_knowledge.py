@@ -12,6 +12,7 @@ from app.knowledge.errors import KnowledgeError
 from app.knowledge.extraction import MAX_SOURCE_BYTES
 from app.knowledge.intake_runtime import create_intake_runtime
 from app.services.model_service.exceptions import ModelServiceError
+from app.services.model_service.service import close_model_services
 from scripts.import_knowledge import import_dsn
 
 
@@ -63,7 +64,10 @@ async def execute(args):
         print(json.dumps(result.public()))
         return 0
     finally:
-        await database.close()
+        try:
+            await close_model_services(service)
+        finally:
+            await database.close()
 
 
 def main():

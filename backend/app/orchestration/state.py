@@ -50,6 +50,7 @@ class OrchestrationState(
 
     # Input
     user_message: str
+    replaced_message_ids: tuple[UUID, ...]
     current_message_id: UUID
     # Set internally after atomic turn admission, never from client metadata.
     turn_managed: bool

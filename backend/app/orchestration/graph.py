@@ -42,6 +42,7 @@ from app.services.context_service import (
 from app.services.conversation_service import (
     ConversationService,
 )
+from app.services.scenario_card_service import ScenarioCardService
 from app.services.scenario_onboarding_interaction_service import (
     ScenarioOnboardingInteractionService,
 )
@@ -102,6 +103,7 @@ def build_orchestration_graph(
         return await route_request_node(
             state,
             orchestrator=orchestrator,
+            scenario_cards=ScenarioCardService(user_context_service=user_context_service),
             context_policy_service=(context_policy_service),
             session_state_update_service=session_state_update_service,
             context_service=context_service,

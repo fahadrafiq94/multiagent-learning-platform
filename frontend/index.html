@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>FREDi Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" id="fontLink" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="css/fredi.css">
+<style>[hidden]{display:none!important}img{max-width:100%}</style>
+</head>
+<body>
+
+<div id="stage"><div id="app"></div></div>
+<div id="noteLayer" aria-hidden="true"></div>
+<div id="notePop" role="dialog" aria-label="Design note" hidden></div>
+
+<button id="reviewBtn" type="button" aria-expanded="false" aria-controls="review">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h10M4 18h7"/><circle cx="18" cy="16" r="3"/></svg><span class="rv-txt">Review</span>
+</button>
+<aside id="review" aria-label="Review panel" hidden>
+  <div class="rv-resize" role="separator" tabindex="0" aria-orientation="vertical" aria-label="Panel width" title="Drag to change the panel width"></div>
+  <div class="rv-head"><h2>Review panel</h2><button class="btn ghost" type="button" id="rvClose" aria-label="Close review panel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="rv-body">
+    <div class="rv-tabs" role="tablist" aria-label="Panel sections"><button type="button" role="tab" id="rvTabReview" aria-selected="true" aria-controls="rvReview">Review</button><button type="button" role="tab" id="rvTabDesign" aria-selected="false" aria-controls="rvDesign">Design settings</button></div>
+    <div class="rv-pane" id="rvReview" role="tabpanel" aria-labelledby="rvTabReview">
+    <p class="rv-foot team-only">Not part of the student interface. Use it to switch design options, jump to the required states and read the design notes. All scenario content is fictional.</p>
+    <section class="rv-sec">
+      <h3>Design options for students</h3>
+      <span class="rv-label">1 · Company profile while setting it up</span>
+      <div class="seg" data-seg="onb"><button type="button" data-v="A">A: fills in live in the panel</button><button type="button" data-v="B">B: shown at the end</button></div>
+      <span class="rv-label">2 · Company profile next to the chat</span>
+      <div class="seg" data-seg="ctx"><button type="button" data-v="A">A: side panel / tabs</button><button type="button" data-v="B">B: bar at the top + drawer</button></div>
+      <label class="switch"><input type="checkbox" id="agentsToggle"> Show which agent answers (scenario agent, process coach, AP+ Navigator)</label>
+      <label class="rv-label" for="logoSel">3 · FREDi logo shown in the prototype</label>
+      <select class="select" id="logoSel" style="min-height:2.4rem"></select>
+      <span class="rv-label team-only">Logos offered in the logo choice (first step)</span>
+      <div class="rv-checks team-only" id="logoShort"></div>
+    </section>
+    <section class="rv-sec">
+      <h3>Preview</h3>
+      <div class="seg" data-seg="frame"><button type="button" data-v="auto">Full width</button><button type="button" data-v="phone">Phone 390 px</button></div>
+      <p class="rv-foot team-only">The phone preview shows a simulated keyboard while you type, so you can judge how much space is left. On a real phone the prototype always uses the full screen.</p>
+      <div class="seg three" data-seg="theme"><button type="button" data-v="system">System</button><button type="button" data-v="light">Light</button><button type="button" data-v="dark">Dark</button></div>
+    </section>
+    <section class="rv-sec team-only">
+      <h3>Required screen states</h3>
+      <div class="states">
+        <button type="button" data-state="logo">Logo choice (first step)</button>
+        <button type="button" data-state="new">New session (first chat)</button>
+        <button type="button" data-state="incomplete">Incomplete profile, new chat</button>
+        <button type="button" data-state="collect">Profile: check fails</button>
+        <button type="button" data-state="review">Profile: review</button>
+        <button type="button" data-state="step">Profile saved, coaching</button>
+        <button type="button" data-state="chats">Several chats, empty new chat</button>
+        <button type="button" data-state="pending">Response pending</button>
+        <button type="button" data-state="failure">Request failure</button>
+        <button type="button" data-state="long">Long conversation</button>
+        <button type="button" data-state="ready">Ready to finish</button>
+        <button type="button" data-state="done">End of test (questionnaire)</button>
+      </div>
+      <label class="switch"><input type="checkbox" id="failNext"> Next FREDi reply fails</label>
+    </section>
+    <section class="rv-sec team-only">
+      <h3>Design notes</h3>
+      <label class="switch"><input type="checkbox" id="notesToggle"> Show interaction notes on screen</label>
+      <p class="rv-foot">Numbered markers explain the action, destination, validation and disabled state of each control.</p>
+    </section>
+    <section class="rv-sec team-only">
+      <h3>In-page feedback</h3>
+      <p class="rv-foot">Every screen has a Feedback button. Entries carry screen, device, design option and participant code. No Google Form is connected yet, so entries are kept in this browser for now.</p>
+      <p class="rv-label" id="fbCount"></p>
+      <ul class="fb-log" id="fbLog"></ul>
+      <div class="rv-row"><button class="btn outline" type="button" id="fbCopy">Copy as table</button><button class="btn ghost" type="button" id="fbClear">Delete</button></div>
+    </section>
+    <section class="rv-sec team-only">
+      <h3>Interaction log (automatic)</h3>
+      <p class="rv-foot">Records what happens during a session, for example how long setup and the scenario card took, failed checks, hints and APplus paths used, panel and tab use. Stored in this browser; later it can go to the same Google Sheet as the feedback.</p>
+      <p class="rv-label" id="evCount"></p>
+      <ul class="ev-log" id="evLog"></ul>
+      <div class="rv-row"><button class="btn outline" type="button" id="evCopy">Copy as table</button><button class="btn ghost" type="button" id="evClear">Delete</button></div>
+    </section>
+    <section class="rv-sec team-only">
+      <h3>Student test links</h3>
+      <p class="rv-foot">Add one of these to the end of the link. It hides this panel and fixes the option shown, so you can vary which option a participant sees first.</p>
+      <div class="rv-copy"><code>#test-AA</code><code>#test-AB</code><code>#test-BA</code><code>#test-BB</code></div>
+    </section>
+    <section class="rv-sec team-only">
+      <h3>Open questions for the project team</h3>
+      <ol class="oq">
+        <li><b>Decided (27 Oct):</b> chat-style interface with a chat list (new, rename, delete). The company profile is set up once and shared with all chats. The profile stays visible in a side panel. The 40-step ERP game stays in the code but is left out of the design for now.</li>
+        <li><b>Saving chats:</b> in the prototype, chats and the profile only exist while the page is open. The real system saves them per student. Should students also be able to delete their company profile and start again?</li>
+        <li><b>Changing the profile later:</b> “Change something” creates a new version, and all chats use the latest one. Is that the intended behaviour, or should older chats keep the version they started with?</li>
+        <li><b>Required check-ins (student version):</b> a short rating after the company profile and after the first new chat, plus the closing questionnaire. Enough, or too many?</li>
+        <li><b>FREDi logo:</b> six new concepts. Students pick one as the first step and the prototype then uses it everywhere. Should the team narrow them down to two or three before the test?</li>
+        <li><b>THWS branding (not yet cleared):</b> this draft uses the official THWS logo and THWS orange #FF6A00. Permission to use them in FREDi still needs to be confirmed. The FREDi logo is a first draft.</li>
+        <li><b>One voice or several agents:</b> do students only see “FREDi”, or should they see which agent answers (scenario agent, process coach, AP+ Navigator)? Try the switch in the design options. The guides call the click-path agent “AP+ Execution Agent”, the Sprint 4 slides “AP+ Navigator”.</li>
+        <li><b>While FREDi responds:</b> the prototype lets students keep typing but blocks sending. Is that right, or should messages queue?</li>
+        <li><b>Later options:</b> streaming replies, saved history and uploads are not shown. Confirm they stay out of release 1.</li>
+        <li><b>Language:</b> the prototype is in English. Do students also need a German version?</li>
+        <li><b>Backend data:</b> which scenario fields (order data, process steps, instructions) can the backend deliver?</li>
+        <li><b>Student test: format, hosting and data protection:</b> test via a link or in lectures? For a link, the prototype needs hosting. A GitHub Pages site is publicly reachable (private only with GitHub Enterprise Cloud), so the THWS branding should be cleared first. Proposal without any hosting: students open the prototype file from the e-learning course, download their results file at the end and upload it there; a script merges all files into one Excel workbook.</li>
+        <li><b>Design source:</b> is this code prototype fine for the handoff, or do we also need a Figma or Penpot file?</li>
+      </ol>
+    </section>
+    <section class="rv-sec team-only">
+      <h3>Known issues</h3>
+      <ol class="oq">
+        <li><b>Phone with doubled text size (edge case):</b> the placeholder and the hint below the message input are cut off on the right. Everything else stays readable.</li>
+        <li><b>Prepared answers:</b> FREDi’s replies are scripted. Free text is understood only for the scenario card and a few keywords; otherwise FREDi says it is a prototype.</li>
+        <li><b>Data stays in the browser:</b> feedback, logo choice and the interaction log are stored locally in the browser used, until a Google Form is connected.</li>
+      </ol>
+    </section>
+    <section class="rv-sec">
+      <h3>Your results</h3>
+      <p class="rv-foot">Downloads one file with feedback, screenshots, answers, interaction log and the design settings chosen in this session.</p>
+      <div class="rv-row"><button class="btn outline" type="button" id="rvDownload">Download results file</button></div>
+    </section>
+    <p class="rv-foot team-only"><button class="btn ghost" type="button" id="introAgain" style="min-height:2rem;padding:.2rem .6rem;font-size:var(--t-xs)">Show the start notice again</button></p>
+    <p class="rv-foot">Prototype v1.1, 27 October 2026</p>
+    </div>
+    <div class="rv-pane" id="rvDesign" role="tabpanel" aria-labelledby="rvTabDesign" hidden>
+      <p class="rv-foot team-only">Try out the look live. Changes are kept in this browser only. When you like a setting, use “Copy settings” and send it to Julius, so it becomes the default for everyone.</p>
+      <p class="rv-foot test-only">Make FREDi look the way you like it. Your settings are saved in your results file.</p>
+      <section class="rv-sec">
+        <h3>Typeface</h3>
+        <select class="select" id="dFont" style="min-height:2.4rem"></select>
+        <p class="font-preview" id="dFontPrev">Learn order processing in APplus, in conversation with FREDi. 0123456789</p>
+      </section>
+      <section class="rv-sec">
+        <h3>Text size</h3>
+        <div class="seg three" data-dseg="size"><button type="button" data-v="s">Smaller</button><button type="button" data-v="m">Normal</button><button type="button" data-v="l">Larger</button></div>
+      </section>
+      <section class="rv-sec">
+        <h3>Colours</h3>
+        <div class="colors">
+          <label><input type="color" id="cBrand"> Brand (buttons)</label>
+          <label><input type="color" id="cPaper"> Background</label>
+          <label><input type="color" id="cSurface"> Cards and panels</label>
+          <label><input type="color" id="cInk"> Text</label>
+        </div>
+        <p class="contrast" id="cContrast"></p>
+        <p class="rv-foot">Background, card and text colours apply to the light look. The brand colour applies to both.</p>
+      </section>
+      <section class="rv-sec">
+        <h3>Contrast</h3>
+        <div class="seg" data-dseg="contrast"><button type="button" data-v="normal">Standard</button><button type="button" data-v="high">High contrast</button></div>
+      </section>
+      <section class="rv-sec">
+        <h3>Corners</h3>
+        <div class="seg three" data-dseg="corners"><button type="button" data-v="sharp">Sharp</button><button type="button" data-v="soft">Soft</button><button type="button" data-v="round">Round</button></div>
+      </section>
+      <section class="rv-sec">
+        <label class="switch"><input type="checkbox" id="dExpert"> <b>Expert mode</b></label>
+        <p class="rv-foot">Layout options for the laptop view: panel side and width, chat width, spacing and what is shown.</p>
+      </section>
+      <div class="rv-pane" id="dExpertBox" hidden>
+        <section class="rv-sec">
+          <h3>Scenario panel (option A, laptop)</h3>
+          <div class="seg" data-dseg="side"><button type="button" data-v="left">Panel left</button><button type="button" data-v="right">Panel right</button></div>
+          <div class="range"><label for="dPanelW">Panel width</label><output id="dPanelWOut"></output><input type="range" id="dPanelW" min="256" max="640" step="8"></div>
+          <label class="switch"><input type="checkbox" id="dPanelOff"> Hide the scenario panel</label>
+        </section>
+        <section class="rv-sec">
+          <h3>Conversation</h3>
+          <div class="range"><label for="dChatW">Maximum chat width</label><output id="dChatWOut"></output><input type="range" id="dChatW" min="40" max="80" step="2"></div>
+          <div class="seg" data-dseg="density"><button type="button" data-v="compact">Compact spacing</button><button type="button" data-v="normal">Normal spacing</button></div>
+        </section>
+        <section class="rv-sec">
+          <h3>Show</h3>
+          <label class="switch"><input type="checkbox" id="dTime"> Time stamps under messages</label>
+          <label class="switch"><input type="checkbox" id="dThws"> THWS logo in the chat header</label>
+          <label class="switch"><input type="checkbox" id="dHint"> Keyboard hint below the input, always (otherwise only while typing)</label>
+        </section>
+      </div>
+      <section class="rv-sec">
+        <div class="rv-row"><button class="btn outline" type="button" id="dCopy">Copy settings</button><button class="btn ghost" type="button" id="dReset">Reset to default</button></div>
+      </section>
+    </div>
+  </div>
+</aside>
+
+<dialog id="fbDlg" aria-labelledby="fbTitle"><form class="dlg fbd" id="fbForm" novalidate>
+  <h2 id="fbTitle">Feedback on this screen</h2>
+  <p class="help" id="fbCpNote" hidden>A short check-in so we learn how this part went for you. It takes about 10 seconds.</p>
+  <div class="fb-tags" id="fbTags"></div>
+  <fieldset class="field" id="fbRateSet" aria-describedby="fbEnds">
+    <legend id="fbQ">How easy is this screen to use?</legend>
+    <div class="fb-scale"><label class="fb-opt"><input type="radio" name="fbRate" value="1" aria-label="1"><span>1</span></label><label class="fb-opt"><input type="radio" name="fbRate" value="2" aria-label="2"><span>2</span></label><label class="fb-opt"><input type="radio" name="fbRate" value="3" aria-label="3"><span>3</span></label><label class="fb-opt"><input type="radio" name="fbRate" value="4" aria-label="4"><span>4</span></label><label class="fb-opt"><input type="radio" name="fbRate" value="5" aria-label="5"><span>5</span></label></div>
+    <div class="fb-ends" id="fbEnds"><span>1 = very difficult</span><span>5 = very easy</span></div>
+    <p class="err" id="fbErr" hidden></p>
+  </fieldset>
+  <div class="field fb-shot" id="fbShotBox">
+    <label class="switch" for="fbShotOn"><input type="checkbox" id="fbShotOn" checked> Include a screenshot of this screen</label>
+    <div class="shot-prev" id="fbShotPrev"><span class="help">Taking a screenshot …</span></div>
+    <p class="help"><span class="paste-hint">You can also paste your own screenshot here (Ctrl+V) or </span><span class="touch-hint">You can also </span><label class="linklike" for="fbShotFile">choose your own image</label>.<input type="file" id="fbShotFile" accept="image/*" class="sr-only"></p>
+  </div>
+  <div class="field"><label for="fbText">What would you change? <span class="opt">(optional)</span></label><textarea id="fbText" class="input" rows="3" placeholder="For example: I didn’t see where to find the order details."></textarea></div>
+  <div class="row"><button type="button" class="btn outline" id="fbCancel">Cancel</button><button type="submit" class="btn primary" id="fbSend">Send feedback</button></div>
+</form></dialog>
+<div id="toast" role="status" aria-live="polite" hidden></div>
+<dialog id="zoomDlg" aria-label="Enlarged picture"><form method="dialog" class="zoom-wrap"><img id="zoomImg" alt=""><button class="btn primary" value="close">Close</button></form></dialog>
+<dialog id="introDlg" aria-labelledby="introTitle"><form method="dialog" class="dlg">
+  <h2 id="introTitle">This is a prototype</h2>
+  <div id="introBody"></div>
+  <div class="field" id="introCodeBox" hidden><label for="introCode">Your participant code</label><p class="help" id="introCodeHelp">Your lecturer gives you this code, for example P07. We don’t need your name.</p><input class="input" id="introCode" autocomplete="off" aria-describedby="introCodeHelp"><p class="err" id="introErr" hidden></p></div>
+  <div class="row"><button class="btn primary" value="ok" id="introOk">Got it</button></div>
+</form></dialog>
+<dialog id="dlg"><form method="dialog" class="dlg"><h2 id="dlgTitle"></h2><p id="dlgBody"></p><div class="row"><button class="btn outline" value="cancel" id="dlgCancel"></button><button class="btn" value="ok" id="dlgOk"></button></div></form></dialog>
+
+<!-- Student test version: uncomment the next line (random design variant, participant code, required check-ins). -->
+<!-- <script>window.FREDI_STUDENT = true;</script> -->
+<script src="vendor/html2canvas.min.js"></script>
+<script src="js/fredi.js"></script>
+</body>
+</html>

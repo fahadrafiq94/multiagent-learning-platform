@@ -20,6 +20,7 @@ class TurnStore(Protocol):
         request_id: UUID,
         content: str,
         trace_id: UUID | None = None,
+        edit_message_id: UUID | None = None,
     ) -> TurnAdmission: ...
 
     async def complete(
@@ -41,3 +42,6 @@ class TurnStore(Protocol):
         status: TurnStatus,
         error_code: str,
     ) -> TurnRecord: ...
+
+    async def delete_session(self, *, user_id: UUID, session_id: UUID) -> None:
+        """Delete every durable turn belonging to one user/session pair."""

@@ -112,6 +112,13 @@ async def test_explicit_role_and_correction_are_saved_with_student_message_prove
         roles = iter(["production planner", "inventory analyst"])
 
         async def extract(request):
+            if request.metadata["task"] == "scenario_onboarding_response":
+                return ModelChatResponse(
+                    content=json.dumps({"content": "Got it — tell me more."}),
+                    model="controlled",
+                    provider="ollama",
+                    latency_ms=0,
+                )
             assert request.metadata["task"] == "scenario_draft_extraction"
             assert set(request.response_schema["required"]) == set(
                 request.response_schema["properties"]

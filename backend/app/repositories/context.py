@@ -124,6 +124,21 @@ class ConversationSessionRepository(Protocol):
 
         ...
 
+    async def delete(
+        self,
+        *,
+        user_id: UUID,
+        session_id: UUID,
+    ) -> None:
+        """
+        Delete one session only when it belongs to the supplied user.
+
+        Implementations must raise RepositoryNotFoundError for
+        sessions that do not exist or are owned by another user.
+        """
+
+        ...
+
 
 @runtime_checkable
 class SessionContextRepository(Protocol):
@@ -166,6 +181,16 @@ class SessionContextRepository(Protocol):
 
         A successful save should increment version.
         """
+
+        ...
+
+    async def delete(
+        self,
+        *,
+        user_id: UUID,
+        session_id: UUID,
+    ) -> None:
+        """Delete the state stored for one user/session pair."""
 
         ...
 
@@ -235,5 +260,32 @@ class ConversationRepository(Protocol):
         session_id: UUID,
     ) -> int:
         """Return the number of messages in one conversation."""
+
+        ...
+
+    async def delete_for_session(
+        self,
+        *,
+        user_id: UUID,
+        session_id: UUID,
+    ) -> None:
+        """Delete every message belonging to one user/session pair."""
+
+        ...
+
+    async def update_message(
+        self,
+        *,
+        user_id: UUID,
+        session_id: UUID,
+        message_id: UUID,
+        content: str,
+    ) -> ConversationMessage:
+        """
+        Replace the stored text of one message and return the update.
+
+        Raises RepositoryNotFoundError when the message does not
+        belong to the user/session pair.
+        """
 
         ...

@@ -77,6 +77,19 @@ class ScenarioOnboardingInteractionService:
             source_message_id=(source_message_id),
         )
 
+    async def compose_collecting_response(
+        self,
+        *,
+        context: AgentContextView,
+        result: ScenarioOnboardingTurnResult,
+    ) -> str:
+        """Student-facing follow-up for one COLLECTING turn; lifecycle is untouched."""
+
+        return await self._scenario_agent.compose_onboarding_response(
+            context=context,
+            result=result,
+        )
+
     async def _handle_collection_turn(
         self,
         *,
@@ -86,15 +99,25 @@ class ScenarioOnboardingInteractionService:
         assert context.scenario_setup is not None
 
         if context.scenario_setup.status == ScenarioSetupStatus.NOT_STARTED:
+            opening = await self._scenario_agent.explore_company(context)
+            if opening.brainstorm_reply:
+                return ScenarioOnboardingTurnResult(
+                    outcome=ScenarioInteractionOutcome.BRAINSTORMING,
+                    status=ScenarioSetupStatus.NOT_STARTED,
+                    reply=opening.brainstorm_reply,
+                )
+            draft = self._scenario_agent.merge_extraction(
+                context=context, extraction=opening, source_message_id=source_message_id
+            )
             await self._onboarding_service.start(
                 user_id=context.user_id,
                 session_id=(context.session_id),
             )
 
-        draft = await self._scenario_agent.extract_draft(
-            context=context,
-            source_message_id=(source_message_id),
-        )
+        else:
+            draft = await self._scenario_agent.extract_draft(
+                context=context, source_message_id=source_message_id
+            )
 
         await self._onboarding_service.save_draft(
             user_id=context.user_id,
@@ -168,6 +191,7 @@ class ScenarioOnboardingInteractionService:
 
         if decision.intent == ScenarioReviewIntent.UNCLEAR:
             return ScenarioOnboardingTurnResult(
+                reply=decision.suggestion_reply,
                 outcome=(ScenarioInteractionOutcome.CLARIFICATION_REQUIRED),
                 status=(ScenarioSetupStatus.REVIEWING),
                 draft=existing,

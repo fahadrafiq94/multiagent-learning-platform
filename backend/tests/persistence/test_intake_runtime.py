@@ -19,6 +19,8 @@ pytestmark = pytest.mark.asyncio
 
 async def test_enabled_intake_lifespan_and_restart(pg, postgres_fixture, monkeypatch, tmp_path):
     kp = postgres_fixture
+    for field in ("embedding_provider", "embedding_base_url", "embedding_model"):
+        monkeypatch.setattr(settings, field, None)
     collection, binding, _, _ = await setup(kp, tmp_path)
     path = tmp_path / "intake-config.json"
     path.write_text(IntakeConfig(bindings=[binding]).model_dump_json(), encoding="utf-8")
@@ -27,7 +29,7 @@ async def test_enabled_intake_lifespan_and_restart(pg, postgres_fixture, monkeyp
     monkeypatch.setattr(settings, "knowledge_ingest_database_url", kp.writer_database.config.dsn)
     monkeypatch.setattr(settings, "knowledge_source_root", tmp_path / "http-sources")
     monkeypatch.setattr(
-        "app.knowledge.intake_runtime.create_model_service", lambda cfg: Embeddings()
+        "app.knowledge.intake_runtime.create_model_service", lambda cfg, **options: Embeddings()
     )
     async with running(pg, monkeypatch) as (client, runtime, _):
         user = await runtime.repositories.identities.create(

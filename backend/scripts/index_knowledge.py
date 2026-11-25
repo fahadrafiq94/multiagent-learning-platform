@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import sys
+from contextlib import AsyncExitStack
 from pathlib import Path
 from uuid import UUID
 
@@ -15,6 +16,7 @@ from app.knowledge.postgres import PostgresKnowledgeRepository
 from app.knowledge.schemas import KnowledgeWriteScope
 from app.services.model_service import create_model_service
 from app.services.model_service.exceptions import ModelServiceError
+from app.services.model_service.service import close_model_services
 from scripts.import_knowledge import import_dsn
 
 
@@ -24,18 +26,13 @@ async def execute(args):
     config = IndexConfig.model_validate_json(args.config.read_bytes())
     if config.embedding.provider != "ollama":
         raise ValueError("This sprint supports the configured Ollama embedding provider.")
-    job_settings = settings.model_copy(
-        update={
-            "model_provider": config.embedding.provider,
-            "ollama_base_url": args.model_url or settings.ollama_base_url,
-            "ollama_embedding_model": config.embedding.model,
-            # The existing factory requires a chat tag. This isolated job never calls
-            # generate; retain the application tag when present without changing it.
-            "ollama_chat_model": settings.ollama_chat_model or config.embedding.model,
-            "model_request_timeout_seconds": args.timeout,
-        }
+    job_settings = settings.model_copy(update={"model_request_timeout_seconds": args.timeout})
+    model_service = create_model_service(
+        job_settings,
+        role="embedding",
+        legacy_model=config.embedding.model,
+        base_url=args.model_url,
     )
-    model_service = create_model_service(job_settings)
     scope = KnowledgeWriteScope(
         access_domain=args.scope_domain,
         user_id=args.owner_user_id,
@@ -50,7 +47,11 @@ async def execute(args):
                 flush=True,
             )
 
-    async with KnowledgeDatabase(KnowledgeDatabaseConfig(dsn=import_dsn())) as database:
+    async with (
+        AsyncExitStack() as resources,
+        KnowledgeDatabase(KnowledgeDatabaseConfig(dsn=import_dsn())) as database,
+    ):
+        resources.push_async_callback(close_model_services, model_service)
         return await index_revision(
             args.source_revision,
             config=config,

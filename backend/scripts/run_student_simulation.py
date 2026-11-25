@@ -310,9 +310,9 @@ async def execute(args):
     config_path = output / "trusted-rag.json"
     config_path.write_text(cfg.model_dump_json(), encoding="utf-8")
 
-    def instrumented_provider(provider_settings):
+    def instrumented_provider(provider_settings, **options):
         wrapped = RecordedModel(
-            create_model_service(provider_settings), output / "model-calls.jsonl"
+            create_model_service(provider_settings, **options), output / "model-calls.jsonl"
         )
         models.append(wrapped)
         return wrapped

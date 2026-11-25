@@ -170,128 +170,32 @@ Develop a context management system that provides each agent with relevant and e
 
 ---
 
-# Sprint 5 – Knowledge Base & RAG
+# Sprint 5 - Knowledge base and persistence
 
-**Status:** Planned
+Implementation complete. The platform stores student conversations and scenario state
+in PostgreSQL, indexes course PDFs, retrieves passages and checks citations. The team
+built evaluation and recovery tooling. Outstanding quality and capacity evaluation
+moves to Sprint 7.
 
-## Goal
+# Sprint 6 - Spark inference and the student workspace
 
-Build the knowledge layer of the platform using structured AP+ step data and Retrieval-Augmented Generation (RAG).
+Closed on 25 November 2026. The team integrated vLLM and independent embeddings,
+connected the pilot student interface, and added onboarding assistance and confirmed
+role changes. See the [Sprint 6 closeout](releases/sprint-6-closeout.md) for validation and limitations.
 
-## Planned
+<a id="sprint-7"></a>
 
-* PostgreSQL integration
-* pgvector setup
-* Structured AP+ 40-step data model
-* Document ingestion
-* Chunking pipeline
-* Metadata handling
-* Embeddings through the Model Service
-* Retrieval pipeline
-* Hybrid search
-* Citation support
-* RAG evaluation with RAGAS or a lightweight local alternative
+# Sprint 7 - Monitoring, deployment, student login and evaluation
 
-## Completed
+| Workstream | Deliverable and completion check |
+| --- | --- |
+| Prometheus and Grafana | Export application metrics and scrape Spark inference metrics. Build dashboards for full-turn latency, errors, agent routing, model queues and service health. Exercise an alert in staging. |
+| DGX Spark deployment | Deploy the browser and backend behind HTTPS with private inference, PostgreSQL and persistent source storage. Verify ARM64 compatibility, migrations, backup restore, restart and rollback on the target. Document deployment and recovery commands. |
+| Student login service | Agree on the provider and cohort access policy. Verify the external account, map it to the existing FREDi UUID, and issue the browser session. Test sign-in, sign-out, denied access and preservation of existing conversations. |
+| Deferred Sprint 5 evaluation | Evaluate retrieval and planner decisions on the intended document revision, citation support and abstention, teaching across three specialists and four guidance levels, and the full student journey. Measure full-turn latency and concurrent pilot capacity. Record a release decision against the [Sprint 5 acceptance checklist](releases/sprint-5-release-checklist.md). |
 
-*To be updated after Sprint 5.*
-
----
-
-# Sprint 6 – Evaluation & Observability
-
-**Status:** Planned
-
-## Goal
-
-Measure, monitor and evaluate the performance of the complete multi-agent system.
-
-## Planned
-
-* Agent response quality evaluation
-* Routing correctness evaluation
-* Socratic behavior evaluation
-* AP+ grounding evaluation
-* Hallucination avoidance checks
-* Hint-level appropriateness evaluation
-* DeepEval integration if useful locally
-* Experiment tracking
-* Benchmark datasets
-* Evaluation reports
-* Logging improvements
-
-## Completed
-
-*To be updated after Sprint 6.*
-
----
-
-# Sprint 7 – Deployment & Production
-
-**Status:** Planned
-
-## Goal
-
-Prepare the platform for deployment on the local or university server.
-
-## Planned
-
-* Multi-container Docker deployment
-* PostgreSQL container
-* Model server deployment with Ollama
-* Future vLLM support
-* Environment configuration
-* Backup strategy
-* Security improvements
-* Deployment documentation
-* Production testing
-* Optional reverse proxy if needed
-* Optional Redis if asynchronous workloads require it
-
-## Completed
-
-*To be updated after Sprint 7.*
-
----
-
-# Final Architecture (Phase 1 Target)
-
-```text
-                    Frontend (Future)
-                           │
-                           ▼
-                     FastAPI Backend
-                           │
-                           ▼
-                  LangGraph Orchestrator
-                           │
-       ┌───────────────────┼────────────────────┐
-       ▼                   ▼                    ▼
- Scenario Agent    Process Coach Agent    AP+ Navigator Agent
-       │                   │                    │
-       └───────────────────┼────────────────────┘
-                           ▼
-                    Context Engine
-                           │
-        ┌──────────────────┼───────────────────┐
-        ▼                  ▼                   ▼
- Active Context     Session Summary      Checklist State
-        │                  │                   │
-        └──────────────────┼───────────────────┘
-                           ▼
-                     Model Service
-                           │
-                  ┌────────┴────────┐
-                  ▼                 ▼
-              Ollama             Future vLLM
-                           │
-                           ▼
-                PostgreSQL • pgvector
-
-          Evaluation: Local Logs • Benchmark Datasets • Custom Rubrics
-```
-
----
+Start with the current Spark model as the baseline. Use the staging results to decide
+the supported cohort size and whether to enable student-facing retrieval.
 
 # Version History
 
@@ -301,7 +205,7 @@ Prepare the platform for deployment on the local or university server.
 | v0.2.0  | Sprint 1 | ✅ Completed |
 | v0.3.0  | Sprint 2 | ✅ Completed |
 | v0.4.0  | Sprint 3 | ✅ Completed |
-| v0.5.0  | Sprint 4 | ⏳ Planned   |
-| v0.6.0  | Sprint 5 | ⏳ Planned   |
-| v0.7.0  | Sprint 6 | ⏳ Planned   |
+| v0.5.0  | Sprint 4 | Completed |
+| v0.6.0  | Sprint 5 | Implementation complete; evaluation in Sprint 7 |
+| v0.7.0  | Sprint 6 | Closed (implementation milestone) |
 | v1.0.0  | Sprint 7 | ⏳ Planned   |

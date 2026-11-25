@@ -193,7 +193,7 @@ async def test_failed_migration_rolls_back_ddl_and_existing_data(pg, tmp_path, m
     assert await pg.repositories.identities.get_by_user_id(user.user_id)
 
 
-async def test_runtime_role_cannot_change_schema_or_mutate_archive(pg):
+async def test_runtime_role_cannot_change_schema_or_reassign_messages(pg):
     from app.context import ConversationMessage
 
     user, _, session = await seed(pg.repositories)
@@ -203,8 +203,8 @@ async def test_runtime_role_cannot_change_schema_or_mutate_archive(pg):
     await pg.repositories.conversations.append(message)
     for statement in [
         "CREATE TABLE application.forbidden(id int)",
-        "UPDATE application.conversation_messages SET payload='{}'::jsonb",
-        "DELETE FROM application.conversation_messages",
+        "UPDATE application.conversation_messages SET role='assistant'",
+        "UPDATE application.conversation_messages SET user_id=gen_random_uuid()",
         "SELECT * FROM application.schema_migrations",
     ]:
         with pytest.raises(RepositoryPermissionError):

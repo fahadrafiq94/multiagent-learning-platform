@@ -15,6 +15,8 @@ from app.knowledge.planner import HybridRetrievalService
 from app.knowledge.retrieval import KnowledgeRetrievalService
 from app.knowledge.search_repository import PostgresSearchRepository
 from app.services.model_service import create_model_service
+from app.services.model_service.profiles import resolve_profile
+from app.services.model_service.service import close_model_services
 
 _PASSWORDLESS_CACHE_KEY = secrets.token_bytes(32)
 
@@ -76,6 +78,7 @@ async def create_grounding_runtime(
     database = KnowledgeDatabase(
         KnowledgeDatabaseConfig(dsn=dsn, max_size=settings.rag_database_pool_size)
     )
+    models = []
     try:
         async with database.connection() as connection:
             await connection.execute("SET TRANSACTION READ ONLY")
@@ -93,40 +96,51 @@ async def create_grounding_runtime(
                     "RAG requires a role without knowledge write privileges."
                 )
             await connection.execute("SELECT 1 FROM knowledge.knowledge_chunks LIMIT 0")
-        # Model endpoints/identities come only from trusted deployment configuration.
         planner_settings = settings.model_copy(
             update={
-                "ollama_base_url": str(config.planner_url).rstrip("/")
-                if config.planner_url
-                else settings.ollama_base_url,
-                "ollama_chat_model": config.planner.model,
                 "model_max_retries": 0,
                 "model_request_timeout_seconds": config.planner.timeout_seconds,
             }
         )
-        embedding_settings = settings.model_copy(
-            update={
-                "ollama_base_url": str(config.embedding_url).rstrip("/")
-                if config.embedding_url
-                else settings.ollama_base_url,
-            }
+        planner_url = str(config.planner_url) if config.planner_url else None
+        embedding_url = str(config.embedding_url) if config.embedding_url else None
+        selected = resolve_profile(
+            planner_settings,
+            "rag_planner",
+            legacy_model=config.planner.model,
+            legacy_url=planner_url,
         )
+        # The planner request must name the model at the selected endpoint, not
+        # an old Ollama alias left in the trusted JSON file.
+        config = config.model_copy(
+            update={"planner": config.planner.model_copy(update={"model": selected.model})}
+        )
+        embeddings = create_model_service(settings, role="embedding", legacy_url=embedding_url)
+        models.append(embeddings)
+        planner_model = create_model_service(
+            planner_settings,
+            role="rag_planner",
+            legacy_model=config.planner.model,
+            legacy_url=planner_url,
+        )
+        models.append(planner_model)
         retrieval = KnowledgeRetrievalService(
             PostgresSearchRepository(
                 database,
                 cache=cache,
                 cache_ttl_seconds=settings.knowledge_cache_ttl_seconds,
             ),
-            create_model_service(embedding_settings),
+            embeddings,
         )
         service = SpecialistGroundingService(
-            HybridRetrievalService(
-                retrieval, create_model_service(planner_settings), config.planner
-            ),
+            HybridRetrievalService(retrieval, planner_model, config.planner),
             config,
         )
         return service, database, cache
     except BaseException:
-        await cache.aclose()
-        await database.close()
+        try:
+            await close_model_services(*models)
+        finally:
+            await cache.aclose()
+            await database.close()
         raise

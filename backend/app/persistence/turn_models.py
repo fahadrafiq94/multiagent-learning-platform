@@ -34,3 +34,4 @@ class TurnAdmission(BaseModel):
     model_config = ConfigDict(frozen=True)
     turn: TurnRecord
     created: bool
+    replaced_message_ids: tuple[UUID, ...] = ()
