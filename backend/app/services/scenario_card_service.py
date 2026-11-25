@@ -13,6 +13,7 @@ from app.context import (
     ScenarioUpdateCandidate,
     UserContext,
 )
+from app.context.schemas import PendingRoleChange
 from app.repositories import (
     RepositoryNotFoundError,
     VersionConflictError,
@@ -137,6 +138,45 @@ class ScenarioCardService:
             raise last_conflict
 
         raise RuntimeError("Unable to persist Scenario Card")
+
+    async def review_role_change(
+        self, *, user_id: UUID, session_id: UUID, message: str, proposed_role: str | None = None
+    ) -> str | None:
+        command = message.strip().casefold().rstrip(".!")
+        confirm = command == "confirm role change"
+        cancel = command == "cancel role change"
+        role = (proposed_role or "").strip()
+        if not (confirm or cancel) and (not role or role not in message):
+            return None
+        context = await self._get_context_with_existing_card(user_id=user_id)
+        card = self._copy_card(context)
+        if confirm or cancel:
+            pending = context.pending_role_changes.pop(session_id, None)
+            if pending is None:
+                return "There is no pending role change in this chat."
+            if cancel:
+                reply = "Cancelled the proposed role change."
+            elif pending.card_version != card.version:
+                reply = "Your scenario has changed. Please state your new role again."
+            else:
+                card.learner_role = pending.role
+                self._mark_card_changed(card)
+                context.scenario_card = card
+                reply = f"Updated your saved scenario. Your role is now {pending.role}."
+        else:
+            if _normalized_text(role) == _normalized_text(card.learner_role or ""):
+                return None
+            context.pending_role_changes[session_id] = PendingRoleChange(
+                role=role, card_version=card.version
+            )
+            reply = (
+                f"Change your saved role from {card.learner_role} to {role}? "
+                "Reply “confirm role change” to save it or “cancel role change” to keep your role."
+            )
+        await self._user_context_service.save(
+            user_id=user_id, context=context, expected_version=context.version
+        )
+        return reply
 
     async def set_confirmed_core_field(
         self,

@@ -51,6 +51,7 @@ class PostgresTurnStore:
         request_id: UUID,
         content: str,
         trace_id: UUID | None = None,
+        edit_message_id: UUID | None = None,
     ) -> TurnAdmission:
         turn_id = uuid5(session_id, f"{user_id}:{request_id}")
         message = ConversationMessage(
@@ -61,12 +62,17 @@ class PostgresTurnStore:
             content=content,
             trace_id=trace_id,
         )
-        request_hash = hashlib.sha256(message.content.encode()).hexdigest()
+        request_content = (
+            f"edit:{edit_message_id}:{message.content}" if edit_message_id else message.content
+        )
+        request_hash = hashlib.sha256(request_content.encode()).hexdigest()
         async with self.database.connection() as connection:
             await require_session(connection, user_id, session_id, lock=True)
             existing = await self._find(connection, user_id, session_id, request_id)
             if existing:
-                if existing["request_hash"] != request_hash:
+                if existing["request_hash"] != request_hash or (
+                    existing["replaces_turn_id"] is None
+                ) != (edit_message_id is None):
                     raise RepositoryConflictError(
                         "Request identifier was reused with different content."
                     )
@@ -78,17 +84,49 @@ class PostgresTurnStore:
             )
             if await cursor.fetchone():
                 raise RepositoryConflictError("Another turn is processing in this conversation.")
+            replaces_turn_id = None
+            replaced_message_ids: tuple[UUID, ...] = ()
+            if edit_message_id is not None:
+                latest = await connection.execute(
+                    "SELECT turn_id, message_id, role "
+                    "FROM application.visible_conversation_messages "
+                    "WHERE user_id=%s AND session_id=%s "
+                    "ORDER BY created_at DESC, sequence_no DESC LIMIT 2",
+                    (user_id, session_id),
+                )
+                messages = await latest.fetchall()
+                if (
+                    len(messages) != 2
+                    or messages[0]["role"] != "assistant"
+                    or messages[1]["role"] != "user"
+                    or messages[1]["message_id"] != edit_message_id
+                    or messages[0]["turn_id"] is None
+                    or messages[0]["turn_id"] != messages[1]["turn_id"]
+                ):
+                    raise RepositoryConflictError(
+                        "Only the latest completed exchange can be edited."
+                    )
+                replaces_turn_id = messages[0]["turn_id"]
+                replaced_message_ids = (edit_message_id, messages[0]["message_id"])
             cursor = await connection.execute(
                 "INSERT INTO "
                 "application.turns(turn_id,user_id,session_id,request_id,"
-                "status,request_hash,user_message_id) "
-                "VALUES (%s,%s,%s,%s,'processing',%s,%s) RETURNING *",
-                (turn_id, user_id, session_id, request_id, request_hash, message.message_id),
+                "status,request_hash,user_message_id,replaces_turn_id) "
+                "VALUES (%s,%s,%s,%s,'processing',%s,%s,%s) RETURNING *",
+                (
+                    turn_id,
+                    user_id,
+                    session_id,
+                    request_id,
+                    request_hash,
+                    message.message_id,
+                    replaces_turn_id,
+                ),
             )
             turn = TurnRecord.model_validate(await cursor.fetchone())
             await insert(connection, message, turn_id=turn_id)
             await touch_session(connection, user_id, session_id)
-            return TurnAdmission(turn=turn, created=True)
+            return TurnAdmission(turn=turn, created=True, replaced_message_ids=replaced_message_ids)
 
     async def complete(
         self,
@@ -168,3 +206,31 @@ class PostgresTurnStore:
                 (status.value, error_code, user_id, session_id, request_id),
             )
             return TurnRecord.model_validate(await cursor.fetchone())
+
+    async def delete_session(self, *, user_id: UUID, session_id: UUID) -> None:
+        async with self.database.connection() as connection:
+            await require_session(connection, user_id, session_id, lock=True)
+            processing = await connection.execute(
+                "SELECT 1 FROM application.turns WHERE user_id=%s AND session_id=%s "
+                "AND status='processing'",
+                (user_id, session_id),
+            )
+            if await processing.fetchone():
+                raise RepositoryConflictError("Another turn is processing in this conversation.")
+            # The turn/message foreign keys are deferred to transaction commit.
+            await connection.execute(
+                "DELETE FROM application.conversation_messages WHERE user_id=%s AND session_id=%s",
+                (user_id, session_id),
+            )
+            await connection.execute(
+                "DELETE FROM application.turns WHERE user_id=%s AND session_id=%s",
+                (user_id, session_id),
+            )
+            await connection.execute(
+                "DELETE FROM application.session_contexts WHERE user_id=%s AND session_id=%s",
+                (user_id, session_id),
+            )
+            await connection.execute(
+                "DELETE FROM application.conversation_sessions WHERE user_id=%s AND session_id=%s",
+                (user_id, session_id),
+            )

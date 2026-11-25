@@ -190,6 +190,17 @@ class _ContextRepository[T: (UserContext, SessionContext)]:
             )
             return decode(self.model, await cursor.fetchone())
 
+    async def delete(self, user_id: UUID, session_id: UUID | None = None) -> None:
+        where, values = self._where(user_id, session_id)
+        async with self.database.connection() as connection:
+            await self._parent(connection, user_id, session_id)
+            await connection.execute(
+                sql.SQL("DELETE FROM application.{} WHERE {}").format(
+                    sql.Identifier(self.table), where
+                ),
+                values,
+            )
+
 
 class PostgresUserContextRepository(_ContextRepository[UserContext]):
     model = UserContext
@@ -268,6 +279,15 @@ class PostgresConversationSessionRepository:
             )
             return decode(ConversationSession, await cursor.fetchone())
 
+    async def delete(self, *, user_id: UUID, session_id: UUID) -> None:
+        async with self.database.connection() as connection:
+            await require_user(connection, user_id)
+            await require_session(connection, user_id, session_id, lock=True)
+            await connection.execute(
+                "DELETE FROM application.conversation_sessions WHERE user_id=%s AND session_id=%s",
+                (user_id, session_id),
+            )
+
 
 class PostgresConversationRepository:
     def __init__(self, database: ApplicationDatabase):
@@ -288,7 +308,7 @@ class PostgresConversationRepository:
         async with self.database.connection() as connection:
             await require_session(connection, user_id, session_id)
             cursor = await connection.execute(
-                "SELECT * FROM application.conversation_messages WHERE user_id=%s AND "
+                "SELECT * FROM application.visible_conversation_messages WHERE user_id=%s AND "
                 "session_id=%s "
                 "ORDER BY created_at,sequence_no LIMIT %s OFFSET %s",
                 (user_id, session_id, limit, offset),
@@ -302,7 +322,7 @@ class PostgresConversationRepository:
         async with self.database.connection() as connection:
             await require_session(connection, user_id, session_id)
             cursor = await connection.execute(
-                "SELECT * FROM application.conversation_messages WHERE user_id=%s AND "
+                "SELECT * FROM application.visible_conversation_messages WHERE user_id=%s AND "
                 "session_id=%s "
                 "ORDER BY created_at DESC,sequence_no DESC LIMIT %s",
                 (user_id, session_id, limit),
@@ -313,12 +333,45 @@ class PostgresConversationRepository:
         async with self.database.connection() as connection:
             await require_session(connection, user_id, session_id)
             cursor = await connection.execute(
-                "SELECT count(*) AS total FROM application.conversation_messages WHERE "
+                "SELECT count(*) AS total FROM application.visible_conversation_messages WHERE "
                 "user_id=%s AND session_id=%s",
                 (user_id, session_id),
             )
             row = await cursor.fetchone()
             return int(row["total"]) if row else 0
+
+    async def delete_for_session(self, *, user_id: UUID, session_id: UUID) -> None:
+        async with self.database.connection() as connection:
+            await require_session(connection, user_id, session_id, lock=True)
+            await connection.execute(
+                "DELETE FROM application.conversation_messages WHERE user_id=%s AND session_id=%s",
+                (user_id, session_id),
+            )
+
+    async def update_message(
+        self,
+        *,
+        user_id: UUID,
+        session_id: UUID,
+        message_id: UUID,
+        content: str,
+    ) -> ConversationMessage:
+        async with self.database.connection() as connection:
+            await require_session(connection, user_id, session_id, lock=True)
+            cursor = await connection.execute(
+                "UPDATE application.conversation_messages "
+                "SET payload=jsonb_set(payload, '{content}', to_jsonb(%s::text)) "
+                "WHERE user_id=%s AND session_id=%s AND message_id=%s AND role='user' "
+                "RETURNING *",
+                (content, user_id, session_id, message_id),
+            )
+            row = await cursor.fetchone()
+            if row is None:
+                raise RepositoryNotFoundError(
+                    entity_name="ConversationMessage",
+                    entity_id=str(message_id),
+                )
+            return decode(ConversationMessage, row)
 
 
 @dataclass(slots=True)

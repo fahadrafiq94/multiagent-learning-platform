@@ -481,6 +481,113 @@ async def test_appending_message_updates_session_activity() -> None:
 
 
 @pytest.mark.asyncio
+async def test_rename_session_updates_title_only_for_owner() -> None:
+    repositories, service = create_service()
+
+    user_a = await create_user(
+        repositories=repositories,
+        student_id="K12345",
+    )
+
+    user_b = await create_user(
+        repositories=repositories,
+        student_id="K67890",
+    )
+
+    session = await service.create_session(
+        user_id=user_a.user_id,
+        title="Original",
+    )
+
+    renamed = await service.rename_session(
+        user_id=user_a.user_id,
+        session_id=session.session_id,
+        title="Renamed",
+    )
+
+    assert renamed.title == "Renamed"
+
+    with pytest.raises(
+        RepositoryNotFoundError,
+        match="ConversationSession not found",
+    ):
+        await service.rename_session(
+            user_id=user_b.user_id,
+            session_id=session.session_id,
+            title="Not mine",
+        )
+
+    assert (
+        await service.get_session(
+            user_id=user_a.user_id,
+            session_id=session.session_id,
+        )
+    ).title == "Renamed"
+
+
+@pytest.mark.asyncio
+async def test_delete_session_removes_state_and_hides_it_from_others() -> None:
+    repositories, service = create_service()
+
+    user_a = await create_user(
+        repositories=repositories,
+        student_id="K12345",
+    )
+
+    user_b = await create_user(
+        repositories=repositories,
+        student_id="K67890",
+    )
+
+    session = await service.create_session(
+        user_id=user_a.user_id,
+        title="To delete",
+    )
+
+    await service.append_user_message(
+        user_id=user_a.user_id,
+        session_id=session.session_id,
+        content="Persisted message.",
+    )
+
+    await service.delete_session(
+        user_id=user_a.user_id,
+        session_id=session.session_id,
+    )
+
+    with pytest.raises(
+        RepositoryNotFoundError,
+        match="ConversationSession not found",
+    ):
+        await service.get_session(
+            user_id=user_a.user_id,
+            session_id=session.session_id,
+        )
+
+    for lookup in (
+        repositories.session_contexts.get(
+            user_id=user_a.user_id,
+            session_id=session.session_id,
+        ),
+        repositories.conversations.count(
+            user_id=user_a.user_id,
+            session_id=session.session_id,
+        ),
+    ):
+        with pytest.raises(RepositoryNotFoundError):
+            await lookup
+
+    with pytest.raises(
+        RepositoryNotFoundError,
+        match="ConversationSession not found",
+    ):
+        await service.delete_session(
+            user_id=user_b.user_id,
+            session_id=session.session_id,
+        )
+
+
+@pytest.mark.asyncio
 async def test_get_session_context_returns_initial_state() -> None:
     repositories, service = create_service()
 

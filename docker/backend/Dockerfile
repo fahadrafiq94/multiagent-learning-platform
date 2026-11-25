@@ -44,6 +44,9 @@ RUN uv sync --frozen
 # ---------------------------------------------------
 COPY backend/app ./app
 COPY backend/scripts ./scripts
+COPY frontend/student.html /frontend/student.html
+COPY frontend/css /frontend/css
+COPY frontend/js /frontend/js
 
 # ---------------------------------------------------
 # FastAPI

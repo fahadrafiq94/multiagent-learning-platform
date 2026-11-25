@@ -1,0 +1,16 @@
+{
+  "name": "fredi-student-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "types": "openapi-typescript generated/openapi.json -o generated/api.d.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test tests/client.test.js",
+    "test:browser": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3"
+  }
+}

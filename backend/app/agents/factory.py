@@ -15,6 +15,7 @@ from app.agents.scenario import (
 from app.services.model_service import (
     ModelService,
 )
+from app.services.model_service.service import service_for_role
 
 
 def create_agent_registry(
@@ -26,7 +27,7 @@ def create_agent_registry(
     ap_plus_navigator_model: (str | None) = None,
 ) -> AgentRegistry:
     scenario = scenario_agent or ScenarioAgent(
-        model_service=model_service,
+        model_service=service_for_role(model_service, "scenario_agent"),
         model=scenario_model,
     )
 
@@ -34,11 +35,11 @@ def create_agent_registry(
         agents=[
             scenario,
             ProcessCoachAgent(
-                model_service=(model_service),
+                model_service=service_for_role(model_service, "process_coach"),
                 model=(process_coach_model),
             ),
             APPlusNavigatorAgent(
-                model_service=(model_service),
+                model_service=service_for_role(model_service, "ap_plus_navigator"),
                 model=(ap_plus_navigator_model),
             ),
         ]

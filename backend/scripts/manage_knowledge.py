@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import copy
+from contextlib import AsyncExitStack
 from pathlib import Path
 from uuid import UUID
 
@@ -23,6 +24,7 @@ from app.persistence.database import ApplicationDatabase, ApplicationDatabaseCon
 from app.repositories.exceptions import RepositoryError
 from app.services.model_service import create_model_service
 from app.services.model_service.exceptions import ModelServiceError
+from app.services.model_service.service import close_model_services
 from scripts.application_credentials import configured_dsn
 from scripts.import_knowledge import import_dsn
 from scripts.knowledge_infra import ROOT, InfrastructureError
@@ -172,20 +174,18 @@ async def complete_config(raw, jobs, operator_id, console, *, root=ROOT):
 
 
 async def verified_model(config, model_url=None):
-    candidates = [model_url] if model_url else [settings.ollama_base_url, "http://127.0.0.1:11434"]
+    candidates = (
+        [model_url]
+        if model_url
+        else [settings.embedding_base_url]
+        if settings.embedding_base_url
+        else [settings.ollama_base_url, "http://127.0.0.1:11434"]
+    )
     for endpoint in dict.fromkeys(e for e in candidates if e):
         profile = settings.model_copy(
-            update={
-                "model_provider": "ollama",
-                "ollama_base_url": endpoint,
-                "ollama_chat_model": settings.ollama_chat_model
-                or config.bindings[0].index.embedding.model,
-                "ollama_embedding_model": config.bindings[0].index.embedding.model,
-                "model_max_retries": 0,
-                "model_request_timeout_seconds": 10,
-            }
+            update={"model_max_retries": 0, "model_request_timeout_seconds": 10}
         )
-        model = create_model_service(profile)
+        model = create_model_service(profile, role="embedding", base_url=endpoint)
         try:
             for binding in config.bindings:
                 expected = binding.index.embedding
@@ -201,10 +201,14 @@ async def verified_model(config, model_url=None):
                     )
             # Real indexing may take longer than the quick setup probe.
             return create_model_service(
-                profile.model_copy(update={"model_request_timeout_seconds": 180})
+                profile.model_copy(update={"model_request_timeout_seconds": 180}),
+                role="embedding",
+                base_url=endpoint,
             )
         except ModelServiceError:
             continue
+        finally:
+            await close_model_services(model)
     raise OperatorError(
         "Embedding service unavailable. Start Ollama or supply --model-url; "
         "no model was downloaded."
@@ -215,7 +219,10 @@ async def execute(args, console=None):
     console = console or Console()
     raw, original = await asyncio.to_thread(read_local_config, args.config)
     owner = await owner_identity()
-    async with KnowledgeDatabase(KnowledgeDatabaseConfig(dsn=import_dsn())) as database:
+    async with (
+        AsyncExitStack() as resources,
+        KnowledgeDatabase(KnowledgeDatabaseConfig(dsn=import_dsn())) as database,
+    ):
         jobs = IntakeRepository(database)
         async with ApplicationDatabase(
             ApplicationDatabaseConfig(dsn=configured_dsn())
@@ -223,6 +230,7 @@ async def execute(args, console=None):
             operator_id = await provision_operator(application, owner)
         config = await complete_config(raw, jobs, operator_id, console)
         model = await verified_model(config, args.model_url)
+        resources.push_async_callback(close_model_services, model)
         dimensions = {b.index.embedding.dimension for b in config.bindings}
         if len(dimensions) != 1:
             raise ValueError(

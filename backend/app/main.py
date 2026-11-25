@@ -3,10 +3,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from app.api.routes.browser_auth import router as browser_auth_router
 from app.api.routes.conversations import router as conversations_router
+from app.api.routes.identity import router as identity_router
 from app.api.routes.knowledge import router as knowledge_router
 from app.api.routes.model import router as model_router
 from app.api.routes.orchestration import router as orchestration_router
+from app.api.routes.student_workspace import router as student_workspace_router
 from app.config.settings import settings
 from app.logging.config import configure_logging
 from app.logging.logger import logger
@@ -18,6 +21,7 @@ from app.repositories.exceptions import (
     VersionConflictError,
 )
 from app.runtime import runtime_lifespan
+from app.student_frontend import configure_student_frontend
 
 
 @asynccontextmanager
@@ -50,6 +54,10 @@ def health():
 app.include_router(model_router)
 app.include_router(orchestration_router)
 app.include_router(conversations_router)
+app.include_router(identity_router)
+app.include_router(student_workspace_router)
+app.include_router(browser_auth_router)
+configure_student_frontend(app)
 app.include_router(knowledge_router)
 
 

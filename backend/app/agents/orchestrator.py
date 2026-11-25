@@ -343,12 +343,13 @@ def routing_generation_schema():
             {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["interaction", "current_step", "route", "reason"],
+                "required": ["interaction", "current_step", "route", "reason", "proposed_role"],
                 "properties": {
                     "interaction": {
                         "anyOf": [b for b in branches if b["properties"]["kind"]["const"] in kinds]
                     },
                     "current_step": step,
+                    "proposed_role": schema["properties"]["proposed_role"],
                     "route": route,
                     "reason": schema["properties"]["reason"],
                 },
@@ -411,6 +412,12 @@ class OrchestratorAgent:
 
         system_prompt = ORCHESTRATOR_SYSTEM_PROMPT
         system_prompt += "\n\n" + STUDENT_STEP_INSTRUCTIONS + "\n\n" + INTERACTION_INSTRUCTIONS
+        system_prompt += (
+            "\nFor an explicit declaration or correction of the student's own scenario role, "
+            "set proposed_role to the exact new role title copied from their current message. "
+            "For questions, hypotheticals, negated roles, other people's jobs or ambiguous "
+            "changes, set proposed_role to null. Never invent a replacement."
+        )
 
         context_text = context_view_to_prompt_text(request.context)
 

@@ -19,6 +19,7 @@ from app.knowledge.intake_schemas import IntakeBinding, IntakeConfig, IntakePayl
 from app.knowledge.schemas import KnowledgeRevision, PipelineVersions, RevisionData
 from app.knowledge.source_store import SourceStore
 from app.services.model_service import ModelService
+from app.services.model_service.service import close_model_services
 
 
 class IntakeService:
@@ -32,6 +33,9 @@ class IntakeService:
     ):
         self.jobs, self.sources, self.extractor, self.model = jobs, sources, extractor, model
         self.bindings = {b.collection_id: b for b in config.bindings}
+
+    async def aclose(self) -> None:
+        await close_model_services(self.model)
 
     def binding(self, collection_id: UUID, manager_id: UUID | None = None) -> IntakeBinding:
         binding = self.bindings.get(collection_id)

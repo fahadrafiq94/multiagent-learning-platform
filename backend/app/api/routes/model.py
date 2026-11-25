@@ -4,10 +4,11 @@ import json
 from collections.abc import AsyncIterator
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from app.services.model_service import ModelService, create_model_service
+from app.api.dependencies import get_runtime
+from app.services.model_service import ModelService
 from app.services.model_service.exceptions import ModelServiceError
 from app.services.model_service.schemas import (
     ModelChatRequest,
@@ -21,20 +22,9 @@ from app.services.model_service.schemas import (
 router = APIRouter(prefix="/model", tags=["model"])
 
 
-def get_model_service() -> ModelService:
-    """FastAPI dependency for the configured model service.
-
-    A misconfigured provider fails with a clean 503 here instead of
-    an unhandled 500, because service construction happens inside
-    the dependency rather than inside a route handler.
-    """
-    try:
-        return create_model_service()
-    except ModelServiceError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=exc.to_dict(),
-        ) from exc
+def get_model_service(request: Request) -> ModelService:
+    """Reuse the lifespan-owned service; never leak a provider per request."""
+    return get_runtime(request).model_service
 
 
 ModelServiceDep = Annotated[ModelService, Depends(get_model_service)]

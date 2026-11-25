@@ -176,7 +176,9 @@ async def test_serving_digest_mismatch_does_not_change_pinned_profile(monkeypatc
             )
         )
     )
-    monkeypatch.setattr("scripts.manage_knowledge.create_model_service", lambda profile: model)
+    monkeypatch.setattr(
+        "scripts.manage_knowledge.create_model_service", lambda profile, **options: model
+    )
     with pytest.raises(setup.OperatorError, match="pinned profile"):
         await verified_model(config, "http://explicit-model:11434")
     assert config.bindings[0].index.embedding == PROFILE

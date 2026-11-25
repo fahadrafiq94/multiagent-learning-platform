@@ -68,7 +68,13 @@ async def pg():
                     "runtime": values.get("APPLICATION_RUNTIME_PASSWORD") or "",
                 },
             )
-        assert await migrate(migrator) == ["001_application", "002_runtime"]
+        assert await migrate(migrator) == [
+            "001_application",
+            "002_runtime",
+            "003_session_deletion",
+            "004_message_editing",
+            "005_message_regeneration",
+        ]
         yield PostgresFixture(name, database, migrator)
     finally:
         await database.close()

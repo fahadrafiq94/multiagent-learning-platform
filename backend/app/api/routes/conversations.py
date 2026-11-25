@@ -3,12 +3,12 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from app.api.dependencies import CurrentUserDep, RuntimeDep
 from app.context import ConversationMessage, ConversationSession, SessionContext
-from app.context.schemas import ShortText
+from app.context.schemas import LongText, ShortText
 from app.persistence.turn_models import TurnStatus
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
@@ -18,6 +18,14 @@ Offset = Annotated[int, Query(ge=0)]
 
 class CreateConversation(BaseModel):
     title: ShortText | None = None
+
+
+class RenameConversation(BaseModel):
+    title: ShortText | None = None
+
+
+class UpdateMessage(BaseModel):
+    content: LongText
 
 
 class ConversationPage(BaseModel):
@@ -86,6 +94,38 @@ async def get_history(
         offset=offset,
     )
     return HistoryPage(items=items, limit=limit, offset=offset)
+
+
+@router.patch("/{session_id}/messages/{message_id}", response_model=ConversationMessage)
+async def update_message(
+    session_id: UUID,
+    message_id: UUID,
+    body: UpdateMessage,
+    user: CurrentUserDep,
+    runtime: RuntimeDep,
+):
+    """Replace the text of one user message in an owned conversation."""
+    return await runtime.conversation_service.update_user_message(
+        user_id=user.user_id,
+        session_id=session_id,
+        message_id=message_id,
+        content=body.content,
+    )
+
+
+@router.patch("/{session_id}", response_model=ConversationSession)
+async def rename_conversation(
+    session_id: UUID, body: RenameConversation, user: CurrentUserDep, runtime: RuntimeDep
+):
+    return await runtime.conversation_service.rename_session(
+        user_id=user.user_id, session_id=session_id, title=body.title
+    )
+
+
+@router.delete("/{session_id}", status_code=204)
+async def delete_conversation(session_id: UUID, user: CurrentUserDep, runtime: RuntimeDep):
+    await runtime.conversation_service.delete_session(user_id=user.user_id, session_id=session_id)
+    return Response(status_code=204)
 
 
 @router.get("/{session_id}/turns/{request_id}", response_model=TurnView)

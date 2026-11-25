@@ -65,6 +65,7 @@ from app.services.conversation_reply import conversation_reply
 from app.services.conversation_service import (
     ConversationService,
 )
+from app.services.scenario_card_service import ScenarioCardService
 from app.services.scenario_onboarding_interaction_schemas import (
     ScenarioInteractionOutcome,
     ScenarioOnboardingTurnResult,
@@ -190,6 +191,7 @@ async def load_context_node(
             current_message=(state["user_message"]),
             trace_id=state.get("trace_id"),
             current_message_id=current_message_id,
+            excluded_message_ids=state.get("replaced_message_ids", ()),
         )
 
         onboarding_required = await onboarding_service.needs_onboarding(user_id=user_id)
@@ -280,7 +282,22 @@ async def scenario_onboarding_node(
             },
         }
 
-    response_text = _render_onboarding_result(result)
+    exploring = result.outcome is ScenarioInteractionOutcome.BRAINSTORMING
+    response_text = result.reply or _render_onboarding_result(result)
+
+    if result.outcome is ScenarioInteractionOutcome.COLLECTING:
+        try:
+            response_text = await interaction_service.compose_collecting_response(
+                context=scenario_context,
+                result=result,
+            )
+        except (
+            AgentError,
+            ValueError,
+            RuntimeError,
+        ):
+            # The deterministic fallback response stays when composing fails.
+            pass
     saved_draft = result.draft
     saved_role = (
         saved_draft.learner_role
@@ -293,12 +310,12 @@ async def scenario_onboarding_node(
     return {
         **state,
         "route": "scenario",
-        "route_reason": ("Scenario onboarding is required before normal routing."),
+        "route_reason": "Exploring company ideas." if exploring else "Setting up the scenario.",
         "agent_response": response_text,
         "metadata": {
             **metadata,
             "selected_agent": "scenario",
-            "scenario_onboarding": True,
+            "scenario_onboarding": not exploring,
             "onboarding_outcome": (result.outcome.value),
             "scenario_status": (result.status.value),
             "scenario_role_status": "persisted" if saved_role else "missing",
@@ -352,6 +369,7 @@ async def _apply_student_step_before_specialist(
                 current_message=state["user_message"],
                 trace_id=state.get("trace_id"),
                 current_message_id=state.get("current_message_id"),
+                excluded_message_ids=state.get("replaced_message_ids", ()),
             )
             metadata["student_step_context_refreshed"] = True
         if status in {"rejected", "clarification_required"}:
@@ -373,6 +391,7 @@ async def route_request_node(
     state: OrchestrationState,
     *,
     orchestrator: OrchestratorAgent,
+    scenario_cards: ScenarioCardService | None = None,
     context_policy_service: (AgentContextPolicyService),
     session_state_update_service: SessionStateUpdateService | None = None,
     context_service: ContextService | None = None,
@@ -412,10 +431,37 @@ async def route_request_node(
         metadata=metadata,
     )
 
+    def role_reply(text: str) -> OrchestrationState:
+        return {
+            **state,
+            "route": "fallback",
+            "route_reason": "Saved scenario role review.",
+            "agent_response": text,
+            "source_references": [],
+            "metadata": {**metadata, "context_reply_handled": True, "routing_completed": True},
+        }
+
     try:
+        if scenario_cards and base_context.scenario_card:
+            reply = await scenario_cards.review_role_change(
+                user_id=base_context.user_id,
+                session_id=base_context.session_id,
+                message=state["user_message"],
+            )
+            if reply:
+                return role_reply(reply)
         result = await orchestrator.route(request)
 
         decision = result.decision
+        if scenario_cards and base_context.scenario_card and decision.proposed_role:
+            reply = await scenario_cards.review_role_change(
+                user_id=base_context.user_id,
+                session_id=base_context.session_id,
+                message=state["user_message"],
+                proposed_role=decision.proposed_role,
+            )
+            if reply:
+                return role_reply(reply)
         metadata.update(
             {
                 key: result.metadata[key]

@@ -25,6 +25,9 @@ backend/reports/
 .claude/settings.local.json
 
 # Testing
+node_modules/
+frontend/test-results/
+frontend/playwright-report/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

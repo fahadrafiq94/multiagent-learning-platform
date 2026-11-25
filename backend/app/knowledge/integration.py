@@ -25,6 +25,7 @@ from app.knowledge.planner_schemas import (
 )
 from app.knowledge.retrieval_schemas import MetadataRequest, RetrievedEvidence, RevisionPin
 from app.knowledge.schemas import AccessScope, KnowledgeModel, Label
+from app.services.model_service.service import close_model_services
 from app.services.session_context_service import SessionContextService
 
 
@@ -105,6 +106,9 @@ class SpecialistGroundingService:
         self.config = config
         self.session_context_service = session_context_service
         self.bindings = {binding.user_id: binding for binding in config.bindings}
+
+    async def aclose(self) -> None:
+        await close_model_services(self.planner.model_service, self.planner.retrieval.model_service)
 
     def _context(self, status, items=(), message_id=None) -> GroundingContext:
         return GroundingContext(

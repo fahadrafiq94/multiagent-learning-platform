@@ -379,6 +379,11 @@ class UserSpecificAdaptation(ContextModel):
     )
 
 
+class PendingRoleChange(ContextModel):
+    role: ShortText
+    card_version: int
+
+
 class UserContext(ContextModel):
     """
     Persistent cross-session context for one FREDi user.
@@ -392,6 +397,7 @@ class UserContext(ContextModel):
     user_id: UUID
 
     scenario_card: ScenarioCard | None = None
+    pending_role_changes: dict[UUID, PendingRoleChange] = Field(default_factory=dict)
 
     learning_profile: UserLearningProfile = Field(
         default_factory=UserLearningProfile,

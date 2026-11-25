@@ -135,6 +135,7 @@ class RoutingDecision(BaseModel):
     # explicit decision; an omitted/malformed decision never grants a state write.
     current_step: StudentStepDecision | None = None
     interaction: InteractionDecision | None = None
+    proposed_role: str | None = Field(default=None, min_length=1, max_length=255)
 
     reason: str = Field(
         min_length=1,

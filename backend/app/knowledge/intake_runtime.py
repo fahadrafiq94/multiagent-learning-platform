@@ -12,6 +12,7 @@ from app.knowledge.intake_repository import IntakeRepository
 from app.knowledge.intake_schemas import IntakeConfig
 from app.knowledge.source_store import FileSourceStore
 from app.services.model_service import create_model_service
+from app.services.model_service.profiles import resolve_profile
 
 
 def create_intake_runtime(settings: Settings, *, require_auth: bool = True):
@@ -36,12 +37,15 @@ def create_intake_runtime(settings: Settings, *, require_auth: bool = True):
         config = IntakeConfig.read(settings.knowledge_intake_config_file)
     except (OSError, ValueError):
         raise KnowledgeUnavailable("Intake configuration is invalid.") from None
+    for binding in config.bindings:
+        resolve_profile(settings, "embedding", legacy_model=binding.index.embedding.model)
+    model = create_model_service(settings, role="embedding")
     database = KnowledgeDatabase(KnowledgeDatabaseConfig(dsn=dsn))
     service = IntakeService(
         IntakeRepository(database),
         FileSourceStore(settings.knowledge_source_root),
         PdfExtractor(),
-        create_model_service(settings),
+        model,
         config,
     )
     return service, database

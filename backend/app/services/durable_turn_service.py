@@ -28,12 +28,15 @@ class DurableTurnService:
         *,
         user_id: UUID,
         session_id: UUID,
-        run: Callable[[UUID, UUID], Awaitable[OrchestrationResponse]],
+        run: Callable[[UUID, UUID, tuple[UUID, ...]], Awaitable[OrchestrationResponse]],
     ) -> OrchestrationResponse:
         assert request.request_id is not None  # Validated by orchestration service.
         scope = dict(user_id=user_id, session_id=session_id, request_id=request.request_id)
         trace_id = uuid4()
-        admitted = await self.store.begin(**scope, content=request.user_message, trace_id=trace_id)
+        edit = {"edit_message_id": request.edit_message_id} if request.edit_message_id else {}
+        admitted = await self.store.begin(
+            **scope, content=request.user_message, trace_id=trace_id, **edit
+        )
         if not admitted.created:
             if admitted.turn.status == TurnStatus.COMPLETED:
                 try:
@@ -50,7 +53,9 @@ class DurableTurnService:
             )
         code = "workflow_failed"
         try:
-            response = await run(admitted.turn.user_message_id, trace_id)
+            response = await run(
+                admitted.turn.user_message_id, trace_id, admitted.replaced_message_ids
+            )
             if response.error:
                 raise RepositoryUnavailableError("The workflow could not complete.")
             code = "invalid_response"

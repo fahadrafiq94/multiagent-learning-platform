@@ -15,6 +15,9 @@ from app.orchestration.schemas import (
     OrchestrationRequest,
 )
 from app.services.model_service import ModelService
+from app.services.model_service.exceptions import (
+    ModelServiceError,
+)
 from app.services.model_service.schemas import (
     ModelChatRequest,
     ModelChatResponse,
@@ -42,6 +45,8 @@ def create_recording_model_service(
     *,
     review_intents: (list[dict[str, object]] | None) = None,
     specialist_operations: (list[dict[str, object]] | None) = None,
+    scenario_extractions: (list[dict[str, object]] | None) = None,
+    fail_onboarding_response: (bool) = False,
 ) -> tuple[
     ModelService,
     AsyncMock,
@@ -56,6 +61,8 @@ def create_recording_model_service(
 
     remaining_reviews = list(review_intents or [])
 
+    remaining_extractions = list(scenario_extractions or [])
+
     async def generate(
         request: ModelChatRequest,
     ) -> ModelChatResponse:
@@ -64,14 +71,34 @@ def create_recording_model_service(
         task = request.metadata.get("task")
 
         if task == ("scenario_draft_extraction"):
-            content = json.dumps(
-                {
+            extraction = (
+                remaining_extractions.pop(0)
+                if remaining_extractions
+                else {
                     "company_context": ("UrbanCycle manufactures bicycles."),
                     "learner_role": ("Production Planner"),
                     "business_problem": ("Customer orders are delayed."),
                     "business_goals": [("Improve delivery reliability.")],
                     "constraints": [("Limited assembly capacity.")],
                     "proposed_facts": [],
+                }
+            )
+
+            content = json.dumps(extraction)
+
+        elif task == "scenario_onboarding_response":
+            if fail_onboarding_response:
+                raise ModelServiceError(
+                    ("The follow-up model call failed."),
+                    code="model_timeout",
+                )
+
+            content = json.dumps(
+                {
+                    "content": (
+                        "Thanks — I have that. What is your role in the company, "
+                        "and what is the main problem you are trying to solve?"
+                    ),
                 }
             )
 
@@ -230,6 +257,120 @@ async def test_complete_onboarding_then_normal_routing() -> None:
     assert "semantic_routing" in tasks
 
     assert "process_coach_response" in tasks
+
+
+@pytest.mark.asyncio
+async def test_partial_onboarding_collects_with_follow_up_before_review() -> None:
+    (
+        model_service,
+        generate_mock,
+        requests,
+    ) = create_recording_model_service(
+        scenario_extractions=[
+            {
+                "company_context": ("UrbanCycle manufactures bicycles."),
+                "learner_role": None,
+                "business_problem": None,
+                "business_goals": None,
+                "constraints": None,
+                "proposed_facts": None,
+            },
+            {
+                "company_context": None,
+                "learner_role": ("Production Planner"),
+                "business_problem": ("Customer orders are delayed."),
+                "business_goals": [("Improve delivery reliability.")],
+                "constraints": None,
+                "proposed_facts": None,
+            },
+        ]
+    )
+
+    runtime = build_orchestration_runtime(model_service=model_service)
+
+    user, session = await create_user_and_session(runtime)
+
+    first = await runtime.orchestration_service.execute(
+        OrchestrationRequest(
+            session_id=str(session.session_id),
+            student_id=(user.student_id),
+            user_message=("I work at UrbanCycle, a bicycle manufacturer."),
+        )
+    )
+
+    assert first.metadata["onboarding_outcome"] == "collecting"
+
+    assert first.metadata["scenario_status"] == "collecting"
+
+    assert first.final_response == (
+        "Thanks — I have that. What is your role in the company, "
+        "and what is the main problem you are trying to solve?"
+    )
+
+    second = await runtime.orchestration_service.execute(
+        OrchestrationRequest(
+            session_id=str(session.session_id),
+            student_id=(user.student_id),
+            user_message=("I am the production planner. Customer orders keep getting delayed."),
+        )
+    )
+
+    assert second.metadata["onboarding_outcome"] == "review_required"
+
+    third = await runtime.orchestration_service.execute(
+        OrchestrationRequest(
+            session_id=str(session.session_id),
+            student_id=(user.student_id),
+            user_message=("Yes, that is correct."),
+        )
+    )
+
+    assert third.metadata["onboarding_outcome"] == "confirmed"
+
+    tasks = [request.metadata.get("task") for request in requests]
+
+    assert "scenario_onboarding_response" in tasks
+
+    # collection turn (extraction + follow-up) +
+    # complete extraction + review confirmation
+    assert generate_mock.await_count == 4
+
+
+@pytest.mark.asyncio
+async def test_onboarding_follow_up_falls_back_when_the_model_fails() -> None:
+    (
+        model_service,
+        _generate_mock,
+        _requests,
+    ) = create_recording_model_service(
+        scenario_extractions=[
+            {
+                "company_context": ("UrbanCycle manufactures bicycles."),
+                "learner_role": None,
+                "business_problem": None,
+                "business_goals": None,
+                "constraints": None,
+                "proposed_facts": None,
+            },
+        ],
+        fail_onboarding_response=True,
+    )
+
+    runtime = build_orchestration_runtime(model_service=model_service)
+
+    user, session = await create_user_and_session(runtime)
+
+    first = await runtime.orchestration_service.execute(
+        OrchestrationRequest(
+            session_id=str(session.session_id),
+            student_id=(user.student_id),
+            user_message=("I work at UrbanCycle, a bicycle manufacturer."),
+        )
+    )
+
+    assert first.metadata["onboarding_outcome"] == "collecting"
+
+    assert "I still need the following scenario information:" in first.final_response
 
 
 @pytest.mark.asyncio

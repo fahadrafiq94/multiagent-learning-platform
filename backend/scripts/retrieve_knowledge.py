@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import os
 import sys
+from contextlib import AsyncExitStack
 from pathlib import Path
 from uuid import UUID
 
@@ -24,6 +25,7 @@ from app.knowledge.schemas import AccessScope
 from app.knowledge.search_repository import PostgresSearchRepository
 from app.services.model_service import create_model_service
 from app.services.model_service.exceptions import ModelServiceError
+from app.services.model_service.service import close_model_services
 from scripts.migrate_knowledge import local_dsn
 
 
@@ -50,7 +52,10 @@ async def execute(args) -> RetrievalResult:
             raise ValueError("Retrieval configuration exceeds its limit.")
         config = RetrievalConfig.model_validate_json(args.config.read_bytes())
     scope = AccessScope(access_domain=args.scope_domain, user_id=args.owner_user_id)
-    async with KnowledgeDatabase(KnowledgeDatabaseConfig(dsn=retrieval_dsn())) as database:
+    async with (
+        AsyncExitStack() as resources,
+        KnowledgeDatabase(KnowledgeDatabaseConfig(dsn=retrieval_dsn())) as database,
+    ):
         repository = PostgresSearchRepository(database)
         if args.step_id is not None:
             return await KnowledgeRetrievalService(repository, config=config).lookup(
@@ -69,16 +74,12 @@ async def execute(args) -> RetrievalResult:
                 status="unavailable", reason="revision_unavailable", collection_id=args.collection
             )
         profile = pin.revision.embedding
-        job_settings = settings.model_copy(
-            update={
-                "model_provider": profile.provider,
-                "ollama_base_url": args.model_url or settings.ollama_base_url,
-                "ollama_embedding_model": profile.model,
-                "ollama_chat_model": settings.ollama_chat_model or profile.model,
-                "model_request_timeout_seconds": args.timeout,
-            }
+        job_settings = settings.model_copy(update={"model_request_timeout_seconds": args.timeout})
+        model = create_model_service(
+            job_settings, role="embedding", legacy_model=profile.model, base_url=args.model_url
         )
-        service = KnowledgeRetrievalService(repository, create_model_service(job_settings), config)
+        resources.push_async_callback(close_model_services, model)
+        service = KnowledgeRetrievalService(repository, model, config)
         return await service.search(
             RetrievalRequest(
                 collection_id=args.collection,

@@ -34,33 +34,13 @@ sprint produces a stable, tested, and deployable milestone.
 
 # Current Status
 
-**Version:** v0.5.0
+**Sprint 6 closed on 25 November 2026.** The student workspace supports pilot sign-in,
+durable conversations, scenario onboarding and confirmed role changes. The agent
+backend can use vLLM on DGX Spark. See the [Sprint 6 closeout](docs/releases/sprint-6-closeout.md).
 
-**Sprint 4 — Context Engineering is complete.** All substeps (4A
-foundation, 4B.1–4B.11) are implemented, tested, and wired into the
-runtime. The Sprint 4 completion gate (security review, release notes,
-README sync, Docker validation) is in progress on `feature/sprint-4`.
-
-Implemented through Sprint 4:
-
-* **Sprint 0–1** — FastAPI backend, configuration, structured logging,
-  Docker, CI, model-service abstraction with provider independence
-* **Sprint 2** — specialist agent foundations (Scenario, Process Coach,
-  AP+ Navigator) with structured agent interfaces
-* **Sprint 3** — semantic multi-agent orchestration with LangGraph
-  (LLM Orchestrator with deterministic keyword fallback); FREDi does not
-  rely on a static routing keyword list
-* **Sprint 4** — identity and multi-user isolation, repository
-  contracts with in-memory persistence (locks, optimistic versioning,
-  deep copies), conversation/session state, ScenarioCard onboarding
-  lifecycle, bounded `AgentContext` via ContextService, controlled
-  LLM-proposed state updates, context budgeting, incremental session
-  summaries, deterministic guidance policy, per-request observability
-  events, and deterministic multi-user/concurrency validation (584
-  tests green)
-
-Release notes per sprint live in [`docs/releases/`](docs/releases/);
-sprint plans in [`docs/plans/`](docs/plans/).
+[Sprint 7](docs/ROADMAP.md#sprint-7) covers Prometheus and Grafana, deployment of
+the application on Spark, integration with the student login service, and the
+evaluation deferred from Sprint 5.
 
 ---
 
@@ -116,7 +96,7 @@ Core principles:
   truncated.
 * **LLMs propose, application code persists** — state updates are typed,
   allow-listed per agent role, and version-checked.
-* **Provider independence** — Ollama today, vLLM later, behind the same
+* **Provider independence** — Ollama and opt-in vLLM chat, behind the same
   model-service abstraction; context and state layers never depend on
   the provider.
 * **User/session isolation is non-negotiable** — every state operation
@@ -137,7 +117,10 @@ Core principles:
 ## Model layer
 
 * Ollama (local development, current)
-* vLLM (planned serving/batching, provider-agnostic boundary ready)
+* vLLM chat adapter and model profiles (Sprint 6 Checkpoints 1–2): structured JSON,
+  provider streaming, independent RAG planner/embedding services, per-agent endpoint
+  overrides and managed HTTP resources. Existing index compatibility remains enforced.
+  See the [vLLM runbook](docs/operations/vllm-provider.md).
 
 ## Quality and operations
 
@@ -153,9 +136,12 @@ Core principles:
 * PostgreSQL + pgvector (durable conversations/context and authorized knowledge retrieval)
 * Optional Redis knowledge cache; database/source backups and scratch restore verification
 
-## Planned (later sprints)
+## Frontend foundation
 
-* Custom frontend (after backend behavior is stable)
+* Supplied vanilla-JavaScript design plus a real `/student` pilot sign-in entry
+  (Sprint 6 Checkpoint 3): same-origin HttpOnly access, verified identity and logout.
+  The workspace supports onboarding and saved chats. See
+  [student browser access](docs/operations/student-browser-access.md).
 
 ---
 
@@ -392,8 +378,9 @@ deployment-specific is hardcoded.
 | 2 | Specialist agent foundations | ✅ v0.3.0 |
 | 3 | Semantic multi-agent orchestration (LangGraph) | ✅ v0.4.0 |
 | 4 | Context engineering (identity, state, context, onboarding, guidance, observability, concurrency) | ✅ v0.5.0 |
-| 5 | RAG / knowledge grounding (shared step metadata, AP+ Execution Guide, Process Coach Guide) | Checkpoint 11 evaluation/operations implemented; release quality/latency acceptance remains open; runtime RAG/intake/cache disabled |
-| — | Persistent DB (PostgreSQL + pgvector), frontend validation/implementation, vLLM serving | later |
+| 5 | Knowledge retrieval and durable persistence | Implementation complete. Final evaluation scheduled for Sprint 7. |
+| 6 | Spark model integration and student workspace | Closed on 25 November 2026 |
+| 7 | Monitoring, Spark deployment, student login and final evaluation | Planned |
 
 Release notes: [`docs/releases/`](docs/releases/).
 

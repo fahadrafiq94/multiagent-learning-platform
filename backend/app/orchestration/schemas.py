@@ -18,6 +18,7 @@ from app.orchestration.state import (
 class OrchestrationRequest(BaseModel):
     # Required by the durable HTTP workflow; optional for earlier in-memory callers.
     request_id: UUID | None = None
+    edit_message_id: UUID | None = None
     session_id: str = Field(min_length=1)
 
     student_id: str = Field(min_length=1)

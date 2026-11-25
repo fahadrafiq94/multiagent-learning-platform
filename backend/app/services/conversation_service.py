@@ -20,6 +20,7 @@ from app.repositories import (
     RepositoryNotFoundError,
     SessionContextRepository,
 )
+from app.repositories.turns import TurnStore
 
 
 class ConversationService:
@@ -54,6 +55,7 @@ class ConversationService:
         conversation_repository: ConversationRepository,
         session_initializer: Callable[[ConversationSession], Awaitable[ConversationSession]]
         | None = None,
+        turn_store: (TurnStore | None) = None,
     ) -> None:
         self._session_repository = session_repository
 
@@ -61,6 +63,7 @@ class ConversationService:
 
         self._conversation_repository = conversation_repository
         self._session_initializer = session_initializer
+        self._turn_store = turn_store
 
     async def create_session(
         self,
@@ -143,6 +146,63 @@ class ConversationService:
             )
 
         return session
+
+    async def rename_session(
+        self,
+        *,
+        user_id: UUID,
+        session_id: UUID,
+        title: str | None,
+    ) -> ConversationSession:
+        """
+        Rename one conversation owned by the user.
+
+        Ownership is checked through get_session, so another
+        user's session is treated as not found.
+        """
+
+        session = await self.get_session(
+            user_id=user_id,
+            session_id=session_id,
+        )
+
+        return await self._session_repository.update(session.model_copy(update={"title": title}))
+
+    async def delete_session(
+        self,
+        *,
+        user_id: UUID,
+        session_id: UUID,
+    ) -> None:
+        """
+        Delete one conversation owned by the user, with its state.
+
+        Durable conversations are deleted in one transaction.
+        """
+
+        if self._turn_store is not None:
+            await self._turn_store.delete_session(user_id=user_id, session_id=session_id)
+            return
+
+        await self.get_session(
+            user_id=user_id,
+            session_id=session_id,
+        )
+
+        await self._conversation_repository.delete_for_session(
+            user_id=user_id,
+            session_id=session_id,
+        )
+
+        await self._session_context_repository.delete(
+            user_id=user_id,
+            session_id=session_id,
+        )
+
+        await self._session_repository.delete(
+            user_id=user_id,
+            session_id=session_id,
+        )
 
     async def get_session_context(
         self,
@@ -296,6 +356,34 @@ class ConversationService:
         return await self._conversation_repository.count(
             user_id=user_id,
             session_id=session_id,
+        )
+
+    async def update_user_message(
+        self,
+        *,
+        user_id: UUID,
+        session_id: UUID,
+        message_id: UUID,
+        content: str,
+    ) -> ConversationMessage:
+        """
+        Replace the stored text of one user message.
+
+        Ownership is checked through get_session; the repository
+        only accepts messages that belong to the same user/session
+        pair and raises RepositoryNotFoundError otherwise.
+        """
+
+        await self.get_session(
+            user_id=user_id,
+            session_id=session_id,
+        )
+
+        return await self._conversation_repository.update_message(
+            user_id=user_id,
+            session_id=session_id,
+            message_id=message_id,
+            content=content,
         )
 
     async def _append_message(

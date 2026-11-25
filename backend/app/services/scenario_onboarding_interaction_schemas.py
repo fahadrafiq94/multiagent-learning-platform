@@ -13,6 +13,7 @@ from app.context.schemas import (
 
 
 class ScenarioInteractionOutcome(StrEnum):
+    BRAINSTORMING = "brainstorming"
     COLLECTING = "collecting"
 
     REVIEW_REQUIRED = "review_required"
@@ -39,4 +40,5 @@ class ScenarioOnboardingTurnResult(BaseModel):
 
     scenario_card: ScenarioCard | None = None
 
+    reply: str | None = None
     changed: bool = False

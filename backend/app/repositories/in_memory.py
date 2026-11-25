@@ -560,6 +560,27 @@ class InMemoryConversationSessionRepository:
 
             return stored.model_copy(deep=True)
 
+    async def delete(
+        self,
+        *,
+        user_id: UUID,
+        session_id: UUID,
+    ) -> None:
+        await self._require_user(user_id)
+
+        async with self._lock:
+            owner = self._session_owners.get(session_id)
+
+            if owner is None or owner != user_id:
+                raise RepositoryNotFoundError(
+                    entity_name=("ConversationSession"),
+                    entity_id=str(session_id),
+                )
+
+            del self._sessions[(user_id, session_id)]
+
+            del self._session_owners[session_id]
+
     async def _require_user(
         self,
         user_id: UUID,
@@ -703,6 +724,25 @@ class InMemorySessionContextRepository:
             self._contexts[key] = stored
 
             return stored.model_copy(deep=True)
+
+    async def delete(
+        self,
+        *,
+        user_id: UUID,
+        session_id: UUID,
+    ) -> None:
+        await self._require_session(
+            user_id=user_id,
+            session_id=session_id,
+        )
+
+        key = (
+            user_id,
+            session_id,
+        )
+
+        async with self._lock:
+            self._contexts.pop(key, None)
 
     async def _require_session(
         self,
@@ -879,6 +919,68 @@ class InMemoryConversationRepository:
                     [],
                 )
             )
+
+    async def delete_for_session(
+        self,
+        *,
+        user_id: UUID,
+        session_id: UUID,
+    ) -> None:
+        await self._require_session(
+            user_id=user_id,
+            session_id=session_id,
+        )
+
+        key = (
+            user_id,
+            session_id,
+        )
+
+        async with self._lock:
+            self._messages.pop(key, None)
+
+            self._message_ids = {
+                message_id: owner for message_id, owner in self._message_ids.items() if owner != key
+            }
+
+    async def update_message(
+        self,
+        *,
+        user_id: UUID,
+        session_id: UUID,
+        message_id: UUID,
+        content: str,
+    ) -> ConversationMessage:
+        await self._require_session(
+            user_id=user_id,
+            session_id=session_id,
+        )
+
+        key = (
+            user_id,
+            session_id,
+        )
+
+        async with self._lock:
+            messages = self._messages.get(key, [])
+
+            for index, message in enumerate(messages):
+                if message.message_id != message_id:
+                    continue
+
+                updated = message.model_copy(
+                    deep=True,
+                    update={"content": content},
+                )
+
+                messages[index] = updated
+
+                return updated.model_copy(deep=True)
+
+        raise RepositoryNotFoundError(
+            entity_name=("ConversationMessage"),
+            entity_id=str(message_id),
+        )
 
     async def _require_session(
         self,

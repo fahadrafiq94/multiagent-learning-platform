@@ -13,6 +13,7 @@ from app.persistence.worker import ApplicationWorker
 from app.repositories.exceptions import RepositoryUnavailableError
 from app.repositories.postgres import create_postgres_repositories
 from app.services.model_service import create_model_service
+from app.services.model_service.service import close_model_services
 
 
 @asynccontextmanager
@@ -22,6 +23,9 @@ async def runtime_lifespan(app: FastAPI):
     knowledge_database = None
     knowledge_cache = None
     intake_database = None
+    model_service = None
+    grounding = None
+    intake = None
     try:
         repositories = None
         if settings.application_storage == "postgres":
@@ -47,8 +51,9 @@ async def runtime_lifespan(app: FastAPI):
                 settings
             )
         extra = {"grounding_service": grounding} if grounding is not None else {}
+        model_service = create_model_service()
         app.state.runtime = build_orchestration_runtime(
-            model_service=create_model_service(),
+            model_service=model_service,
             repositories=repositories,
             **extra,
         )
@@ -57,18 +62,23 @@ async def runtime_lifespan(app: FastAPI):
         app.state.knowledge_database = knowledge_database
         app.state.knowledge_intake = None
         if settings.knowledge_intake_enabled:
-            app.state.knowledge_intake, intake_database = create_intake_runtime(settings)
+            intake, intake_database = create_intake_runtime(settings)
+            app.state.knowledge_intake = intake
         yield
     finally:
         app.state.runtime = None
         app.state.knowledge_intake = None
-        if intake_database is not None:
-            await intake_database.close()
-        if knowledge_cache is not None:
-            await knowledge_cache.aclose()
-        if knowledge_database is not None:
-            await knowledge_database.close()
-        if database is not None:
-            await database.close()
-        if worker is not None:
-            await worker.close()
+        # Test/legacy facades may not own resources. Keep cleanup compatible.
+        try:
+            await close_model_services(model_service, grounding, intake)
+        finally:
+            if intake_database is not None:
+                await intake_database.close()
+            if knowledge_cache is not None:
+                await knowledge_cache.aclose()
+            if knowledge_database is not None:
+                await knowledge_database.close()
+            if database is not None:
+                await database.close()
+            if worker is not None:
+                await worker.close()

@@ -14,7 +14,7 @@ services:
       # container itself. Use the Ollama Compose service name.
       OLLAMA_BASE_URL: http://ollama:11434
 
-      MODEL_PROVIDER: ollama
+      # MODEL_PROVIDER comes from backend/.env (Settings defaults to Ollama).
 
     command:
       - uv
@@ -39,6 +39,7 @@ services:
       - ../../backend/tests:/app/tests
       - ../../backend/scripts:/app/scripts
       - ../../backend/docs:/app/docs
+      - ../../frontend:/frontend:ro
 
     networks:
       - fredi-network

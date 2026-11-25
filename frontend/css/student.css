@@ -1,0 +1,92 @@
+/* Pilot entry uses the supplied prototype's typography, colors and component tokens. */
+[hidden] { display: none !important; }
+.student-access { min-height: 100dvh; display: grid; align-content: center; gap: 2rem; padding: 2rem 1rem; }
+.access-brand { display: flex; align-items: center; justify-content: center; gap: .75rem; font-family: var(--f-display); font-size: 1.6rem; font-weight: 800; }
+.access-mark { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: var(--r-b); background: var(--brand); color: var(--brand-ink); }
+.access-card { width: min(100%, 30rem); margin-inline: auto; display: grid; gap: 1.25rem; padding: clamp(1.5rem, 5vw, 2.5rem); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-b); box-shadow: var(--shadow); }
+.access-card h1 { font-size: 1.75rem; }
+.access-card form { display: grid; gap: 1rem; }
+.access-card .input { width: 100%; }
+.access-card .btn { min-height: 2.75rem; }
+.access-card .err:empty { display: none; }
+.access-card strong { overflow-wrap: anywhere; }
+.workspace-active { height: 100dvh; overflow: hidden; }
+.workspace-active .student-access { min-height: 0; display: block; padding: 0; }
+.workspace-active .access-brand, .workspace-active #signed-in { display: none; }
+#workspace { height: 100dvh; position: relative; container: app / inline-size; }
+#workspace .shell { height: 100%; }
+#workspace .message-text, #workspace dd { white-space: pre-wrap; overflow-wrap: anywhere; }
+#workspace .bubble { min-width: 0; }
+#workspace .composer-wrap > .err { padding: .5rem; }
+/* Per-message copy/edit tools sit outside the bubble, right under it. */
+#workspace .msg { display: grid; grid-template-columns: minmax(0, 1fr); gap: .3rem; }
+#workspace .msg.user { justify-items: end; }
+#workspace .msg.fredi { justify-items: start; }
+#workspace .msg-tools { display: flex; align-items: center; gap: .25rem; }
+#workspace .msg-day { color: var(--muted); text-align: center; font-size: var(--t-sm); }
+#workspace .msg-time { color: var(--muted); font-size: .75rem; padding-inline: .35rem; opacity: 0; }
+#workspace .msg:hover .msg-time, #workspace .msg:focus-within .msg-time { opacity: 1; }
+@media (hover: none) {
+  #workspace .msg-time { opacity: 1; }
+}
+#workspace .msg-tool { border: 0; background: transparent; color: var(--muted); font-size: .8rem; line-height: 1; cursor: pointer; padding: .2rem .35rem; border-radius: var(--r-s); }
+#workspace .msg-tool:hover { background: var(--surface-2); color: var(--ink); }
+#workspace .msg.user.editing > .bubble { width: min(100%, 38rem); max-width: 100%; }
+#workspace .msg-edit-form { display: grid; gap: .75rem; }
+#workspace .msg-edit-form textarea { width: 100%; height: 6rem; min-height: 0; overflow-y: auto; resize: none; background: transparent; color: inherit; font: inherit; }
+#workspace .msg-edit-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+
+#workspace .card-facts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+#workspace .card-facts dt { margin-bottom: .25rem; }
+
+/* The message box scrolls without a visible scrollbar; content still reaches by wheel or keys. */
+#workspace .composer textarea { scrollbar-width: none; -ms-overflow-style: none; height: 2.75rem; max-height: 2.75rem; }
+#workspace .composer textarea::-webkit-scrollbar { display: none; }
+
+/* Slim always-visible rail: logo (opens the chat list), new chat, search, account circle. */
+#workspace .shell { grid-template-columns: 3.5rem minmax(0, 1fr); }
+#workspace .rail { display: grid; grid-template-rows: auto auto auto minmax(0,1fr); align-items: center; justify-items: center; gap: .5rem; padding: .6rem .5rem; background: var(--side); border-right: 1px solid var(--line); min-height: 0; }
+#workspace .rail-logo, #workspace .rail-btn, #workspace .rail-user { width: 2.6rem; height: 2.6rem; display: grid; place-items: center; cursor: pointer; }
+#workspace .rail-logo { border: 0; border-radius: var(--r-b); background: var(--brand); color: var(--brand-ink); font-family: var(--f-display); font-size: 1.35rem; font-weight: 800; }
+#workspace .rail-btn { border: 0; border-radius: var(--r-s); background: transparent; color: var(--ink); font-size: 1.25rem; }
+#workspace .rail-user { border: 1.5px solid var(--brand-line); border-radius: 50%; background: var(--brand-soft); color: var(--ink); font-size: .55rem; font-weight: 700; overflow: hidden; white-space: nowrap; }
+#workspace .rail-user-anchor { position: relative; display: grid; place-items: center; align-self: end; }
+/* P01 sits at the viewport bottom, so the popup opens upwards to stay on screen. */
+#workspace .rail .user-menu { right: auto; left: calc(100% + 8px); top: auto; bottom: calc(100% + .25rem); min-width: 9rem; }
+#workspace .rail-logo:hover, #workspace .rail-btn:hover, #workspace .rail-user:hover { background: var(--surface-2); }
+
+/* The chat list opens beside the rail only while the logo toggle is active. */
+@container app (min-width: 47.5625rem) {
+  #workspace .side { display: none; }
+  #workspace .shell.side-open { grid-template-columns: 3.5rem var(--side-w, 16rem) minmax(0, 1fr); }
+  /* fredi.css makes .side an absolute drawer below 60rem; re-seat it in the grid column. */
+  #workspace .shell.side-open .side { display: grid; position: static; left: auto; width: auto; transform: none; visibility: visible; box-shadow: none; }
+}
+@container app (max-width: 47.5rem) {
+  #workspace .side { left: 3.5rem; width: min(19rem, 80%); }
+  #workspace .ws-title { display: block; }
+}
+
+#workspace .user-menu { min-width: 10rem; }
+/* The chat options menu is viewport-fixed so the scrollable chat list never clips it. */
+#workspace .ci-menu { position: fixed; right: auto; z-index: 60; }
+/* Scroll without a visible scrollbar; content still reaches by wheel or keys. */
+#workspace .thread, #workspace .chat-list { scrollbar-width: none; -ms-overflow-style: none; }
+#workspace .thread::-webkit-scrollbar, #workspace .chat-list::-webkit-scrollbar { display: none; }
+
+/* Centered dialogs (chats, new chat, company profile) above the workspace. */
+#workspace .modal-backdrop { position: absolute; inset: 0; z-index: 40; display: grid; place-items: center; padding: 1rem; background: rgba(15, 23, 42, .45); }
+#workspace .modal { width: min(100%, 32rem); max-height: min(100%, 32rem); overflow: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-b); box-shadow: var(--shadow); display: grid; grid-template-rows: auto minmax(0, 1fr); }
+#workspace .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.25rem .5rem; }
+#workspace .modal-head h2 { font-size: 1.25rem; }
+#workspace .modal-body { display: grid; gap: 1rem; padding: .5rem 1.25rem 1.25rem; min-height: 0; overflow: auto; }
+/* Dialogs scroll without a visible scrollbar too. */
+#workspace .modal, #workspace .modal-body, #workspace .modal-list { scrollbar-width: none; -ms-overflow-style: none; }
+#workspace .modal::-webkit-scrollbar, #workspace .modal-body::-webkit-scrollbar, #workspace .modal-list::-webkit-scrollbar { display: none; }
+#workspace .modal-list { max-height: 18rem; overflow: auto; margin: 0; padding: 0; }
+#workspace .modal-list .empty { padding: .75rem .25rem; color: var(--muted); }
+#workspace .new-form { display: grid; gap: 1rem; }
+#workspace .profile-body .facts { margin: 0; }
+
+/* Shown while a scenario awaits review. */
+#workspace .review-cta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; max-width: var(--chat-w); margin: 0 auto .75rem; padding: .6rem .75rem; background: var(--brand-soft); border: 1px solid var(--brand-line); border-radius: var(--r-l); }
