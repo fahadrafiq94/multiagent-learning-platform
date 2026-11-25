@@ -49,8 +49,8 @@ indent-style = "space"
 
 [tool.mypy]
 exclude = [
-    '^reports/',
-    '^pytest-of-',
+    '(^|/)reports/',
+    '(^|/)pytest-of-[^/]+/',
 ]
 plugins = [
   "pydantic.mypy"

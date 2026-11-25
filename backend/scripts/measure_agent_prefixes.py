@@ -61,7 +61,7 @@ def specialist_difference(first: str, second: str) -> str:
     if offset >= end:
         return "after runtime context"
     # The renderer writes indented JSON, one field per line. Record only schema keys.
-    path = {}
+    path: dict[int, str] = {}
     for line in second[start : second.find("\n", offset)].splitlines():
         stripped = line.lstrip()
         if not stripped.startswith('"'):
